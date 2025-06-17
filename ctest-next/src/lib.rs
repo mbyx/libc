@@ -15,6 +15,7 @@ mod ast;
 mod ffi_items;
 mod generator;
 mod macro_expansion;
+mod translator;
 
 pub use ast::{Abi, Const, Field, Fn, Parameter, Static, Struct, Type, Union};
 pub use generator::TestGenerator;
