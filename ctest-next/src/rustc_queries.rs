@@ -85,7 +85,7 @@ pub fn rustc_host() -> Result<String> {
         .nth(4)
         .unwrap()
         .split(':')
-        .last()
+        .next_back()
         .map(|s| s.trim())
         .unwrap();
 

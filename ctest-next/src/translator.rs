@@ -177,6 +177,7 @@ impl Translator {
     /// This method is only used for translating expressions inside of
     /// array brackets, and will fail for expressions not allowed inside of
     /// those brackets.
+    #[expect(clippy::only_used_in_recursion)]
     fn translate_expr(&self, expr: &syn::Expr) -> String {
         match expr {
             syn::Expr::Lit(l) => match &l.lit {
