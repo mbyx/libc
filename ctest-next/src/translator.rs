@@ -6,13 +6,11 @@ pub(crate) struct Translator {}
 
 impl Translator {
     /// Create a new translator.
-    #[expect(unused)]
     pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// Return whether a type is a Rust primitive type.
-    #[expect(unused)]
     fn is_rust_primitive(&self, ty: &str) -> bool {
         let rustc_types = [
             "usize", "u8", "u16", "u32", "u64", "isize", "i8", "i16", "i32", "i64", "f32", "f64",
@@ -21,7 +19,6 @@ impl Translator {
     }
 
     /// Translate mutability from Rust to C.
-    #[expect(unused)]
     fn translate_mut(&self, mutability: Option<syn::Token![mut]>) -> String {
         mutability.map(|_| "const ").unwrap_or("").to_string()
     }
