@@ -14,13 +14,9 @@ fn default_generator(opt_level: u8) -> Result<(TestGenerator, tempfile::TempDir)
     let temp_dir = tempfile::tempdir()?;
     let mut generator = TestGenerator::new();
 
-    Ok((
-        generator
-            .out_dir(&temp_dir)
-            .include("tests/input")
-            .to_owned(),
-        temp_dir,
-    ))
+    generator.out_dir(&temp_dir).include("tests/input");
+
+    Ok((generator, temp_dir))
 }
 
 #[test]

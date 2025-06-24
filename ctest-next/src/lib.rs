@@ -32,3 +32,13 @@ pub type Error = Box<dyn std::error::Error>;
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// A boxed string for representing identifiers.
 type BoxStr = Box<str>;
+
+/// The programming language being compiled into a library.
+#[derive(Default, Debug, PartialEq, Eq)]
+pub enum Language {
+    /// The C programming language.
+    #[default]
+    C,
+    /// The C++ programming language.
+    CXX,
+}

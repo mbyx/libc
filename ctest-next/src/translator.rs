@@ -6,6 +6,7 @@ pub(crate) struct Translator {}
 
 impl Translator {
     /// Create a new translator.
+    #[expect(unused)]
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -123,7 +124,6 @@ impl Translator {
                     s => s.to_string(),
                 }
             }
-            // Overriding type names not yet implemented.
             s => s.to_string(),
         }
     }

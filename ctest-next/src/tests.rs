@@ -51,7 +51,7 @@ fn test_extraction_ffi_items() {
 
 #[test]
 fn test_translation_type_path() {
-    let translator = Translator {};
+    let translator = Translator::default();
     let ty: syn::Type = syn::parse_str("std::option::Option<u8>").unwrap();
 
     assert_eq!(translator.translate_type(&ty), "uint8_t");
@@ -59,7 +59,7 @@ fn test_translation_type_path() {
 
 #[test]
 fn test_translation_type_ptr() {
-    let translator = Translator {};
+    let translator = Translator::default();
     let ty: syn::Type = syn::parse_str("*const *mut i32").unwrap();
 
     assert_eq!(translator.translate_type(&ty), " int32_t* const*");
@@ -67,7 +67,7 @@ fn test_translation_type_ptr() {
 
 #[test]
 fn test_translation_type_reference() {
-    let translator = Translator {};
+    let translator = Translator::default();
     let ty: syn::Type = syn::parse_str("&u8").unwrap();
 
     assert_eq!(translator.translate_type(&ty), "uint8_t*");
@@ -75,7 +75,7 @@ fn test_translation_type_reference() {
 
 #[test]
 fn test_translation_type_bare_fn() {
-    let translator = Translator {};
+    let translator = Translator::default();
     let ty: syn::Type = syn::parse_str("fn(*mut u8, i16) -> &str").unwrap();
 
     assert_eq!(
@@ -86,7 +86,7 @@ fn test_translation_type_bare_fn() {
 
 #[test]
 fn test_translation_type_array() {
-    let translator = Translator {};
+    let translator = Translator::default();
     let ty: syn::Type = syn::parse_str("[&u8; 2 + 2]").unwrap();
 
     assert_eq!(translator.translate_type(&ty), "uint8_t*[2 + 2]");

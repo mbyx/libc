@@ -9,12 +9,12 @@ use crate::{Abi, Const, Field, Fn, Parameter, Static, Struct, Type, Union};
 /// Includes foreign functions/statics, type aliases, structs, unions, and constants.
 #[derive(Default, Clone, Debug)]
 pub(crate) struct FfiItems {
-    aliases: Vec<Type>,
-    structs: Vec<Struct>,
-    unions: Vec<Union>,
-    constants: Vec<Const>,
-    foreign_functions: Vec<Fn>,
-    foreign_statics: Vec<Static>,
+    pub(crate) aliases: Vec<Type>,
+    pub(crate) structs: Vec<Struct>,
+    pub(crate) unions: Vec<Union>,
+    pub(crate) constants: Vec<Const>,
+    pub(crate) foreign_functions: Vec<Fn>,
+    pub(crate) foreign_statics: Vec<Static>,
 }
 
 impl FfiItems {
