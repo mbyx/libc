@@ -1,7 +1,7 @@
 use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-{% if rustc_version < RustcVersion::new(1, 30, 0) %}
+{% if generator.rustc_version < RustcVersion::new(1, 30, 0) %}
     static FAILED: AtomicBool = std::sync::atomic::ATOMIC_BOOL_INIT;
     static NTESTS: AtomicUsize = std::sync::atomic::ATOMIC_USIZE_INIT;
 {% else %}

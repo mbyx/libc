@@ -12,10 +12,11 @@ use crate::{
     expand,
     ffi_items::FfiItems,
     template::{CTestTemplate, RustTestTemplate},
-    Const, Field, Language, Result, Static, Struct, Type,
+    Const, Field, Language, Parameter, Result, RustcVersion, Static, Struct, Type,
+    VolatileItemKind,
 };
 /// Inputs needed to rename or skip a field.
-#[expect(dead_code)]
+#[expect(unused)]
 #[derive(Debug, Clone)]
 pub(crate) enum MapInput<'a> {
     Struct(&'a Struct),
@@ -29,6 +30,8 @@ pub(crate) enum MapInput<'a> {
 
 type MappedName = Box<dyn Fn(&MapInput) -> Option<String>>;
 type Skip = Box<dyn Fn(&MapInput) -> bool>;
+type VolatileItem = Box<dyn Fn(VolatileItemKind) -> bool>;
+type ArrayArg = Box<dyn Fn(crate::Fn, Parameter) -> bool>;
 
 /// A builder used to generate a test suite.
 #[non_exhaustive]
@@ -45,6 +48,10 @@ pub struct TestGenerator {
     defines: Vec<(String, Option<String>)>,
     mapped_names: Vec<MappedName>,
     skips: Vec<Skip>,
+    verbose_skip: bool,
+    volatile_item: Option<VolatileItem>,
+    array_arg: Option<ArrayArg>,
+    pub(crate) rustc_version: RustcVersion,
 }
 
 impl TestGenerator {
@@ -83,6 +90,38 @@ impl TestGenerator {
     /// Configures the output directory of the generated Rust and C code.
     pub fn out_dir<P: AsRef<Path>>(&mut self, p: P) -> &mut Self {
         self.out_dir = Some(p.as_ref().to_owned());
+        self
+    }
+
+    /// Skipped item names are printed to `stderr` if `skip` is `true`.
+    pub fn verbose_skip(&mut self, skip: bool) -> &mut Self {
+        self.verbose_skip = skip;
+        self
+    }
+
+    /// Target Rust version: `major`.`minor`.`patch`
+    pub fn rustc_version(&mut self, major: u8, minor: u8, patch: u8) -> &mut Self {
+        self.rustc_version = RustcVersion::new(major, minor, patch);
+        self
+    }
+
+    /// Is volatile?
+    ///
+    /// The closure given takes a `VolatileKind` denoting a particular item that
+    /// could be volatile, and returns whether this is the case.
+    pub fn volatile_item(&mut self, f: impl Fn(VolatileItemKind) -> bool + 'static) -> &mut Self {
+        self.volatile_item = Some(Box::new(f));
+        self
+    }
+
+    /// Is argument of function an array?
+    ///
+    /// The closure denotes whether particular argument of a function is an array.
+    pub fn array_arg<F>(
+        &mut self,
+        f: impl Fn(crate::Fn, Parameter) -> bool + 'static,
+    ) -> &mut Self {
+        self.array_arg = Some(Box::new(f));
         self
     }
 
@@ -360,21 +399,53 @@ impl TestGenerator {
     /// This method is not responsible for skipping any specific tests or for skipping tests for
     /// specific fields.
     fn filter_ffi_items(&self, ffi_items: &mut FfiItems) {
-        ffi_items
+        let (retained_aliases, skipped_aliases): (Vec<_>, Vec<_>) = ffi_items
             .aliases
-            .retain(|ty| !self.skips.iter().any(|f| f(&MapInput::Alias(ty))));
-        ffi_items
+            .drain(..)
+            .partition(|ty| !self.skips.iter().any(|f| f(&MapInput::Alias(ty))));
+        ffi_items.aliases = retained_aliases;
+
+        let (retained_constants, skipped_constants): (Vec<_>, Vec<_>) = ffi_items
             .constants
-            .retain(|ty| !self.skips.iter().any(|f| f(&MapInput::Const(ty))));
-        ffi_items
+            .drain(..)
+            .partition(|ty| !self.skips.iter().any(|f| f(&MapInput::Const(ty))));
+        ffi_items.constants = retained_constants;
+
+        let (retained_structs, skipped_structs): (Vec<_>, Vec<_>) = ffi_items
             .structs
-            .retain(|ty| !self.skips.iter().any(|f| f(&MapInput::Struct(ty))));
-        ffi_items
+            .drain(..)
+            .partition(|ty| !self.skips.iter().any(|f| f(&MapInput::Struct(ty))));
+        ffi_items.structs = retained_structs;
+
+        let (retained_fns, skipped_fns): (Vec<_>, Vec<_>) = ffi_items
             .foreign_functions
-            .retain(|ty| !self.skips.iter().any(|f| f(&MapInput::Fn(ty))));
-        ffi_items
+            .drain(..)
+            .partition(|ty| !self.skips.iter().any(|f| f(&MapInput::Fn(ty))));
+        ffi_items.foreign_functions = retained_fns;
+
+        let (retained_statics, skipped_statics): (Vec<_>, Vec<_>) = ffi_items
             .foreign_statics
-            .retain(|ty| !self.skips.iter().any(|f| f(&MapInput::Static(ty))));
+            .drain(..)
+            .partition(|ty| !self.skips.iter().any(|f| f(&MapInput::Static(ty))));
+        ffi_items.foreign_statics = retained_statics;
+
+        if self.verbose_skip {
+            skipped_aliases
+                .iter()
+                .for_each(|ty| eprintln!("Skipping alias \"{}\"", ty.ident()));
+            skipped_constants
+                .iter()
+                .for_each(|ty| eprintln!("Skipping const \"{}\"", ty.ident()));
+            skipped_structs
+                .iter()
+                .for_each(|ty| eprintln!("Skipping struct \"{}\"", ty.ident()));
+            skipped_statics
+                .iter()
+                .for_each(|ty| eprintln!("Skipping static \"{}\"", ty.ident()));
+            skipped_fns
+                .iter()
+                .for_each(|ty| eprintln!("Skipping fn \"{}\"", ty.ident()));
+        }
     }
 
     /// Maps Rust identifiers or types of items to their C counterparts if specified, otherwise defaults to original.

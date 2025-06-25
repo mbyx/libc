@@ -42,3 +42,17 @@ pub enum Language {
     /// The C++ programming language.
     CXX,
 }
+
+/// A kind of item to which the C volatile qualifier could apply.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum VolatileItemKind {
+    /// A struct field.
+    StructField(Struct, Field),
+    /// An extern static.
+    Static(Static),
+    /// A function argument.
+    FnArgument(Fn, Box<Parameter>),
+    /// Function return type.
+    FnReturnType(Fn),
+}

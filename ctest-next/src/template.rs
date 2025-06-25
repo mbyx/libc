@@ -2,15 +2,14 @@ use askama::Template;
 use quote::ToTokens;
 
 use crate::{
-    ffi_items::FfiItems, generator::MapInput, rustc_version, translator::Translator, Result,
-    RustcVersion, TestGenerator,
+    ffi_items::FfiItems, generator::MapInput, translator::Translator, Result, RustcVersion,
+    TestGenerator,
 };
 
 /// Represents the Rust side of the generated testing suite.
 #[derive(Template, Clone)]
 #[template(path = "test.rs")]
 pub(crate) struct RustTestTemplate<'a> {
-    rustc_version: RustcVersion,
     ffi_items: &'a FfiItems,
     generator: &'a TestGenerator,
 }
@@ -29,7 +28,6 @@ impl<'a> RustTestTemplate<'a> {
     pub(crate) fn new(ffi_items: &'a FfiItems, generator: &'a TestGenerator) -> Result<Self> {
         Ok(Self {
             ffi_items,
-            rustc_version: rustc_version()?,
             generator,
         })
     }

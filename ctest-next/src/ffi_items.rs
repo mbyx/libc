@@ -24,7 +24,6 @@ impl FfiItems {
     }
 
     /// Return whether the type has parsed a struct with the given identifier.
-    #[expect(unused)]
     pub(crate) fn contains_struct(&self, ident: &str) -> bool {
         self.structs()
             .iter()
@@ -32,7 +31,6 @@ impl FfiItems {
     }
 
     /// Return whether the type has parsed a union with the given identifier.
-    #[expect(unused)]
     pub(crate) fn contains_union(&self, ident: &str) -> bool {
         self.unions().iter().any(|union| union.ident() == ident)
     }

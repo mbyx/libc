@@ -21,6 +21,12 @@ impl RustcVersion {
     }
 }
 
+impl Default for RustcVersion {
+    fn default() -> Self {
+        rustc_version().unwrap()
+    }
+}
+
 impl Display for RustcVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
