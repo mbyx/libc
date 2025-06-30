@@ -12,8 +12,7 @@ use crate::{
     expand,
     ffi_items::FfiItems,
     template::{CTestTemplate, RustTestTemplate},
-    Const, Field, Language, Parameter, Result, RustcVersion, Static, Struct, Type,
-    VolatileItemKind,
+    Const, Field, Language, Parameter, Result, Static, Struct, Type, VolatileItemKind,
 };
 /// Inputs needed to rename or skip a field.
 #[expect(unused)]
@@ -34,14 +33,12 @@ type VolatileItem = Box<dyn Fn(VolatileItemKind) -> bool>;
 type ArrayArg = Box<dyn Fn(crate::Fn, Parameter) -> bool>;
 
 /// A builder used to generate a test suite.
-#[non_exhaustive]
 #[derive(Default)]
 #[expect(missing_debug_implementations)]
 pub struct TestGenerator {
     headers: Vec<String>,
-    target: Option<String>,
-    host: Option<String>,
-    includes: Vec<PathBuf>,
+    pub(crate) target: Option<String>,
+    pub(crate) includes: Vec<PathBuf>,
     out_dir: Option<PathBuf>,
     language: Language,
     flags: Vec<String>,
@@ -51,7 +48,6 @@ pub struct TestGenerator {
     verbose_skip: bool,
     volatile_item: Option<VolatileItem>,
     array_arg: Option<ArrayArg>,
-    pub(crate) rustc_version: RustcVersion,
 }
 
 impl TestGenerator {
@@ -61,20 +57,21 @@ impl TestGenerator {
     }
 
     /// Add a header to be included as part of the generated C file.
+    ///
+    /// The generate C test will be compiled by a C compiler, and this can be
+    /// used to ensure that all the necessary header files are included to test
+    /// all FFI definitions.
     pub fn header(&mut self, header: &str) -> &mut Self {
         self.headers.push(header.to_string());
         self
     }
 
     /// Configures the target to compile C code for.
+    ///
+    /// Note that for Cargo builds this defaults to `$TARGET` and it's not
+    /// necessary to call.
     pub fn target(&mut self, target: &str) -> &mut Self {
         self.target = Some(target.to_string());
-        self
-    }
-
-    /// Configures the host.
-    pub fn host(&mut self, host: &str) -> &mut Self {
-        self.host = Some(host.to_string());
         self
     }
 
@@ -96,12 +93,6 @@ impl TestGenerator {
     /// Skipped item names are printed to `stderr` if `skip` is `true`.
     pub fn verbose_skip(&mut self, skip: bool) -> &mut Self {
         self.verbose_skip = skip;
-        self
-    }
-
-    /// Target Rust version: `major`.`minor`.`patch`
-    pub fn rustc_version(&mut self, major: u8, minor: u8, patch: u8) -> &mut Self {
-        self.rustc_version = RustcVersion::new(major, minor, patch);
         self
     }
 
@@ -273,87 +264,13 @@ impl TestGenerator {
         self
     }
 
-    /// Generate all tests for the given crate and output the Rust side to a file.
-    pub fn generate<P: AsRef<Path>>(&mut self, crate_path: P, output_file_path: P) -> Result<()> {
-        let output_file_path = self.generate_files(crate_path, output_file_path)?;
-
-        let target = self
-            .target
-            .clone()
-            .unwrap_or(env::var("TARGET_PLATFORM").unwrap());
-        let host = self
-            .host
-            .clone()
-            .unwrap_or(env::var("HOST_PLATFORM").unwrap());
-
-        let mut cfg = cc::Build::new();
-        if let Language::CXX = self.language {
-            cfg.cpp(true);
-        }
-
-        let extension = match self.language {
-            Language::C => "c",
-            Language::CXX => "cpp",
-        };
-
-        cfg.file(output_file_path.with_extension(extension));
-        cfg.host(&host);
-        if target.contains("msvc") {
-            cfg.flag("/W3")
-                .flag("/Wall")
-                .flag("/WX")
-                // ignored warnings
-                .flag("/wd4820") // warning about adding padding?
-                .flag("/wd4100") // unused parameters
-                .flag("/wd4996") // deprecated functions
-                .flag("/wd4296") // '<' being always false
-                .flag("/wd4255") // converting () to (void)
-                .flag("/wd4668") // using an undefined thing in preprocessor?
-                .flag("/wd4366") // taking ref to packed struct field might be unaligned
-                .flag("/wd4189") // local variable initialized but not referenced
-                .flag("/wd4710") // function not inlined
-                .flag("/wd5045") // compiler will insert Spectre mitigation
-                .flag("/wd4514") // unreferenced inline function removed
-                .flag("/wd4711"); // function selected for automatic inline
-        } else {
-            cfg.flag("-Wall")
-                .flag("-Wextra")
-                .flag("-Werror")
-                .flag("-Wno-unused-parameter")
-                .flag("-Wno-type-limits")
-                // allow taking address of packed struct members:
-                .flag("-Wno-address-of-packed-member")
-                .flag("-Wno-unknown-warning-option")
-                .flag("-Wno-deprecated-declarations"); // allow deprecated items
-        }
-
-        for flag in &self.flags {
-            cfg.flag(flag);
-        }
-
-        for (a, b) in &self.defines {
-            cfg.define(a, b.as_ref().map(|s| &s[..]));
-        }
-
-        for p in &self.includes {
-            cfg.include(p);
-        }
-
-        let stem: &str = output_file_path.file_stem().unwrap().to_str().unwrap();
-        cfg.target(&target)
-            .out_dir(output_file_path.parent().unwrap())
-            .compile(stem);
-
-        Ok(())
-    }
-
     /// Generate the Rust and C testing files.
     ///
     /// Returns the path to the generated file.
-    pub(crate) fn generate_files<P: AsRef<Path>>(
+    pub fn generate_files(
         &mut self,
-        crate_path: P,
-        output_file_path: P,
+        crate_path: impl AsRef<Path>,
+        output_file_path: impl AsRef<Path>,
     ) -> Result<PathBuf> {
         let expanded = expand(crate_path)?;
         let ast = syn::parse_file(&expanded)?;
@@ -371,11 +288,8 @@ impl TestGenerator {
         let output_file_path = output_directory.join(output_file_path);
 
         // Generate the Rust side of the tests.
-        File::create(output_file_path.with_extension("rs"))?.write_all(
-            RustTestTemplate::new(&ffi_items, self)?
-                .render()?
-                .as_bytes(),
-        )?;
+        File::create(output_file_path.with_extension("rs"))?
+            .write_all(RustTestTemplate::new(&ffi_items, self).render()?.as_bytes())?;
 
         let extension = match self.language {
             Language::C => "c",

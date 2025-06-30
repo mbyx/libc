@@ -13,3 +13,5 @@ union Word
     uint16_t word;
     Byte byte[2];
 };
+
+#define A "abc"

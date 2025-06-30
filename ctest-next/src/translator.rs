@@ -1,88 +1,207 @@
-use std::ops::Deref;
+//! Translation of Rust types to C for test generation.
+//!
+//! Simple to semi complex types are supported only.
 
-#[derive(Debug, Default)]
+use std::{fmt, ops::Deref};
+
+use proc_macro2::Span;
+use quote::ToTokens;
+use syn::spanned::Spanned;
+use thiserror::Error;
+
+/// An error that occurs during translation, detailing cause and location.
+#[derive(Debug)]
+pub struct TranslationError {
+    kind: TranslationErrorKind,
+    source: String,
+    #[expect(unused)]
+    span: Span,
+}
+
+impl TranslationError {
+    /// Create a new translation error.
+    pub(crate) fn new(kind: TranslationErrorKind, source: &str, span: Span) -> Self {
+        Self {
+            kind,
+            source: source.to_string(),
+            span,
+        }
+    }
+}
+
+impl fmt::Display for TranslationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}: `{}`",
+            self.kind,
+            self.source,
+            // FIXME(ctest): Not yet stable, see:
+            // https://github.com/dtolnay/proc-macro2/issues/503
+            // self.span.file(),
+            // self.span.start().line,
+            // self.span.start().column,
+        )
+    }
+}
+
+/// Errors that can occur during the translation of a type.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub(crate) enum TranslationErrorKind {
+    /// The provided type is unknown or unrecognized.
+    #[error("unsupported type")]
+    UnsupportedType,
+
+    /// A reference to a non-primitive type was encountered, which is not supported.
+    #[error("references to non-primitive types are not allowed")]
+    NonPrimitiveReference,
+
+    /// Variadic functions or parameters were found, which cannot be handled.
+    #[error("variadics cannot be translated")]
+    HasVariadics,
+
+    /// Lifetimes were found in the type or function signature, which are not supported.
+    #[error("lifetimes cannot be translated")]
+    HasLifetimes,
+
+    /// A type that is not ffi compatible was found.
+    #[error("this type is not guaranteed to have a C compatible layout. See improper_ctypes_definitions lint")]
+    NotFfiCompatible,
+}
+
+#[derive(Clone, Debug, Default)]
 /// A Rust to C/Cxx translator.
 pub(crate) struct Translator {}
 
 impl Translator {
     /// Create a new translator.
-    #[expect(unused)]
     pub(crate) fn new() -> Self {
         Self::default()
     }
 
-    /// Return whether a type is a Rust primitive type.
-    fn is_rust_primitive(&self, ty: &str) -> bool {
-        let rustc_types = [
-            "usize", "u8", "u16", "u32", "u64", "isize", "i8", "i16", "i32", "i64", "f32", "f64",
-        ];
-        ty.starts_with("c_") || rustc_types.contains(&ty)
-    }
-
     /// Translate mutability from Rust to C.
     fn translate_mut(&self, mutability: Option<syn::Token![mut]>) -> String {
-        mutability.map(|_| "const ").unwrap_or("").to_string()
+        mutability.map(|_| "").unwrap_or("const").to_string()
     }
 
     /// Translate a Rust type into its equivalent C type.
-    pub(crate) fn translate_type(&self, ty: &syn::Type) -> String {
+    pub(crate) fn translate_type(&self, ty: &syn::Type) -> Result<String, TranslationError> {
         match ty {
             syn::Type::Ptr(ptr) => self.translate_ptr(ptr),
             syn::Type::Path(path) => self.translate_path(path),
-            syn::Type::Tuple(tuple) if tuple.elems.is_empty() => "void".to_string(),
+            syn::Type::Tuple(tuple) if tuple.elems.is_empty() => Ok("void".to_string()),
             syn::Type::Array(array) => self.translate_array(array),
             syn::Type::Reference(reference) => self.translate_reference(reference),
             syn::Type::BareFn(function) => self.translate_bare_fn(function),
-            syn::Type::Never(_) => "void".to_string(),
-            _ => unimplemented!(),
+            syn::Type::Never(_) => Ok("void".to_string()),
+            syn::Type::Slice(slice) => Err(TranslationError::new(
+                TranslationErrorKind::NotFfiCompatible,
+                &slice.to_token_stream().to_string(),
+                slice.span(),
+            )),
+            syn::Type::Paren(paren) => self.translate_type(&paren.elem),
+            syn::Type::Group(group) => self.translate_type(&group.elem),
+            ty => Err(TranslationError::new(
+                TranslationErrorKind::UnsupportedType,
+                &ty.to_token_stream().to_string(),
+                ty.span(),
+            )),
         }
     }
 
     /// Translate a Rust reference to its C equivalent.
-    fn translate_reference(&self, reference: &syn::TypeReference) -> String {
-        let path = match reference.elem.deref() {
-            syn::Type::Path(path) => path.path.segments.last().unwrap(),
-            syn::Type::Array(array) => {
-                return format!(
-                    "{}{}*",
-                    self.translate_mut(reference.mutability),
-                    self.translate_type(&array.elem),
-                )
-            }
-            _ => panic!("Unknown type! {:?}", reference.elem),
-        };
+    fn translate_reference(
+        &self,
+        reference: &syn::TypeReference,
+    ) -> Result<String, TranslationError> {
+        let modifier = self.translate_mut(reference.mutability);
 
-        let ident = path.ident.to_string();
-        match ident.as_str() {
-            "str" => {
-                if reference.mutability.is_some() {
-                    panic!("Unknown type, &mut str");
+        match reference.elem.deref() {
+            syn::Type::Path(path) => {
+                let last_segment = path.path.segments.last().unwrap();
+                let ident = last_segment.ident.to_string();
+
+                match ident.as_str() {
+                    "str" => {
+                        // &str is not ABI safe and should not be supported.
+                        Err(TranslationError::new(
+                            TranslationErrorKind::NotFfiCompatible,
+                            "&str",
+                            path.span(),
+                        ))
+                    }
+                    c if is_rust_primitive(c) => {
+                        let base_type = self.translate_primitive_type(&last_segment.ident);
+                        Ok(format!("{modifier} {base_type}*").trim().to_string())
+                    }
+                    _ => Err(TranslationError::new(
+                        TranslationErrorKind::NonPrimitiveReference,
+                        &ident,
+                        path.span(),
+                    )),
                 }
-
-                "char*".to_string()
             }
-            c if self.is_rust_primitive(c) => format!(
-                "{}{}*",
-                self.translate_mut(reference.mutability),
-                self.translate_primitive_type(&path.ident)
-            ),
-            _ => unimplemented!("References to non primitive types are not implemented."),
+            syn::Type::Array(arr) => {
+                let len = translate_expr(&arr.len);
+                let ty = self.translate_type(arr.elem.deref())?;
+                let inner_type = format!("{ty} (*) [{len}]");
+                Ok(inner_type
+                    .replacen("(*)", &format!("(*{modifier})"), 1)
+                    .trim()
+                    .to_string())
+            }
+            syn::Type::BareFn(_) => {
+                let inner_type = self.translate_type(reference.elem.deref())?;
+                Ok(inner_type
+                    .replacen("(*)", &format!("(*{modifier})"), 1)
+                    .trim()
+                    .to_string())
+            }
+            syn::Type::Reference(_) | syn::Type::Ptr(_) => {
+                let inner_type = self.translate_type(reference.elem.deref())?;
+                if inner_type.contains("(*)") {
+                    Ok(inner_type
+                        .replacen("(*)", &format!("(*{modifier})"), 1)
+                        .trim()
+                        .to_string())
+                } else {
+                    Ok(format!("{inner_type} {modifier}*").trim().to_string())
+                }
+            }
+            _ => Err(TranslationError::new(
+                TranslationErrorKind::UnsupportedType,
+                &reference.elem.to_token_stream().to_string(),
+                reference.elem.span(),
+            )),
         }
     }
 
     /// Translate a Rust function pointer type to its C equivalent.
-    fn translate_bare_fn(&self, function: &syn::TypeBareFn) -> String {
-        assert!(function.lifetimes.is_none(), "No lifetimes allowed.");
-        assert!(function.variadic.is_none(), "No variadics allowed.");
+    fn translate_bare_fn(&self, function: &syn::TypeBareFn) -> Result<String, TranslationError> {
+        if function.lifetimes.is_some() {
+            return Err(TranslationError::new(
+                TranslationErrorKind::HasLifetimes,
+                &function.to_token_stream().to_string(),
+                function.span(),
+            ));
+        }
+        if function.variadic.is_some() {
+            return Err(TranslationError::new(
+                TranslationErrorKind::HasVariadics,
+                &function.to_token_stream().to_string(),
+                function.span(),
+            ));
+        }
 
         let mut parameters = function
             .inputs
             .iter()
             .map(|arg| self.translate_type(&arg.ty))
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, TranslationError>>()?;
+
         let return_type = match &function.output {
             syn::ReturnType::Default => "void".to_string(),
-            syn::ReturnType::Type(_, ty) => self.translate_type(ty),
+            syn::ReturnType::Type(_, ty) => self.translate_type(ty)?,
         };
 
         if parameters.is_empty() {
@@ -90,118 +209,119 @@ impl Translator {
         }
 
         if return_type.contains("(*)") {
-            return_type.replace("(*)", &format!("(*(*)({}))", parameters.join(", ")))
+            let params = parameters.join(", ");
+            Ok(return_type.replacen("(*)", &format!("(*(*)({params}))"), 1))
         } else {
-            format!("{}(*)({})", return_type, parameters.join(", "))
+            Ok(format!("{return_type}(*)({})", parameters.join(", ")))
         }
     }
 
     /// Translate a Rust primitive type into its C equivalent.
     fn translate_primitive_type(&self, ty: &syn::Ident) -> String {
-        let ty = ty.to_string();
-        match ty.as_str() {
+        match ty.to_string().as_str() {
             "usize" => "size_t".to_string(),
             "isize" => "ssize_t".to_string(),
             "u8" => "uint8_t".to_string(),
             "u16" => "uint16_t".to_string(),
             "u32" => "uint32_t".to_string(),
             "u64" => "uint64_t".to_string(),
+            "u128" => "unsigned __int128".to_string(),
             "i8" => "int8_t".to_string(),
             "i16" => "int16_t".to_string(),
             "i32" => "int32_t".to_string(),
             "i64" => "int64_t".to_string(),
+            "i128" => "__int128".to_string(),
             "f32" => "float".to_string(),
             "f64" => "double".to_string(),
             "()" => "void".to_string(),
 
             "c_longdouble" | "c_long_double" => "long double".to_string(),
             ty if ty.starts_with("c_") => {
-                let ty = &ty[2..].replace("long", " long")[..];
-                match ty {
+                let ty = &ty[2..].replace("long", " long");
+                match ty.as_str() {
                     "short" => "short".to_string(),
                     s if s.starts_with('u') => format!("unsigned {}", &s[1..]),
                     s if s.starts_with('s') => format!("signed {}", &s[1..]),
                     s => s.to_string(),
                 }
             }
+            // Pass typedefs as is.
             s => s.to_string(),
         }
     }
 
     /// Translate a Rust path into its C equivalent.
-    fn translate_path(&self, path: &syn::TypePath) -> String {
-        // Paths should be fully qualified otherwise they won't properly be translated.
+    fn translate_path(&self, path: &syn::TypePath) -> Result<String, TranslationError> {
         let last = path.path.segments.last().unwrap();
-        if last.ident == "Option" {
-            if let syn::PathArguments::AngleBracketed(p) = &last.arguments {
-                if let syn::GenericArgument::Type(ty) = p.args.first().unwrap() {
-                    self.translate_type(ty)
-                } else {
-                    unimplemented!("Only simple generic types are supported!")
-                }
-            } else {
-                unreachable!("Option<T> cannot have parentheses.")
-            }
-        } else {
-            self.translate_primitive_type(&last.ident)
-        }
+        Ok(self.translate_primitive_type(&last.ident))
     }
 
     /// Translate a Rust array declaration into its C equivalent.
-    fn translate_array(&self, array: &syn::TypeArray) -> String {
-        format!(
+    fn translate_array(&self, array: &syn::TypeArray) -> Result<String, TranslationError> {
+        Ok(format!(
             "{}[{}]",
-            self.translate_type(array.elem.deref()),
-            self.translate_expr(&array.len)
-        )
+            self.translate_type(array.elem.deref())?,
+            translate_expr(&array.len)
+        ))
     }
 
     /// Translate a Rust pointer into its equivalent C pointer.
-    fn translate_ptr(&self, ptr: &syn::TypePtr) -> String {
-        let modifier = ptr.mutability.map(|_| "").unwrap_or("const");
+    fn translate_ptr(&self, ptr: &syn::TypePtr) -> Result<String, TranslationError> {
+        let modifier = self.translate_mut(ptr.mutability);
         let inner = ptr.elem.deref();
+
         match inner {
-            syn::Type::BareFn(_) => self.translate_type(inner),
-            syn::Type::Ptr(_) => format!("{} {}*", self.translate_type(inner), modifier),
-            syn::Type::Array(arr) => {
-                let len = self.translate_expr(&arr.len);
-                let ty = self.translate_type(inner);
-                format!("{modifier} {ty} [{len}]")
+            syn::Type::BareFn(_) => {
+                let inner_type = self.translate_type(ptr.elem.deref())?;
+                Ok(inner_type
+                    .replacen("(*)", &format!("(*{modifier})"), 1)
+                    .trim()
+                    .to_string())
             }
-            _ => format!("{} {}*", modifier, self.translate_type(inner)),
-        }
-    }
-
-    /// Translate a simple Rust expression to C.
-    ///
-    /// This method is only used for translating expressions inside of
-    /// array brackets, and will fail for expressions not allowed inside of
-    /// those brackets.
-    #[expect(clippy::only_used_in_recursion)]
-    fn translate_expr(&self, expr: &syn::Expr) -> String {
-        match expr {
-            syn::Expr::Lit(l) => match &l.lit {
-                syn::Lit::Int(i) => i.to_string(),
-                _ => panic!("Invalid Syntax! Cannot have non integer literal in array expression."),
-            },
-            syn::Expr::Path(p) => p.path.segments.last().unwrap().ident.to_string(),
-            syn::Expr::Cast(c) => self.translate_expr(c.expr.deref()),
-            syn::Expr::Binary(b) => {
-                let left = self.translate_expr(b.left.deref());
-                let right = self.translate_expr(b.right.deref());
-
-                match b.op {
-                    syn::BinOp::Add(_) => format!("{left} + {right}"),
-                    syn::BinOp::Sub(_) => format!("{left} - {right}"),
-                    // Some operators have not been implemented, such as
-                    // shift left, shift right etc. Some other operators cannot be
-                    // placed inside array brackets.
-                    _ => unimplemented!("Unknown Operator! {:?}", b.op),
+            syn::Type::Array(arr) => {
+                let len = translate_expr(&arr.len);
+                let ty = self.translate_type(arr.elem.deref())?;
+                let inner_type = format!("{ty} (*) [{len}]");
+                Ok(inner_type
+                    .replacen("(*)", &format!("(*{modifier})"), 1)
+                    .trim()
+                    .to_string())
+            }
+            syn::Type::Reference(_) | syn::Type::Ptr(_) => {
+                let inner_type = self.translate_type(ptr.elem.deref())?;
+                if inner_type.contains("(*)") {
+                    Ok(inner_type
+                        .replacen("(*)", &format!("(*{modifier} *)"), 1)
+                        .trim()
+                        .to_string())
+                } else {
+                    Ok(format!("{inner_type} {modifier}*").trim().to_string())
                 }
             }
-            // Some expressions have not been implemented, such as
-            // braces eg: [u8; { expr }], constant functions, etc.
-            _ => unimplemented!("Unknown Expression! {:?}", expr),
+            _ => {
+                let inner_type = self.translate_type(inner)?;
+                Ok(format!("{inner_type} {modifier}*"))
+            }
         }
     }
+}
+
+/// Translate a simple Rust expression to C.
+///
+/// This function will just pass the expression as is in most cases.
+fn translate_expr(expr: &syn::Expr) -> String {
+    match expr {
+        syn::Expr::Path(p) => p.path.segments.last().unwrap().ident.to_string(),
+        syn::Expr::Cast(c) => translate_expr(c.expr.deref()),
+        expr => expr.to_token_stream().to_string(),
+    }
+}
+
+/// Return whether a type is a Rust primitive type.
+fn is_rust_primitive(ty: &str) -> bool {
+    let rustc_types = [
+        "usize", "u8", "u16", "u32", "u64", "u128", "isize", "i8", "i16", "i32", "i64", "i128",
+        "f32", "f64",
+    ];
+    ty.starts_with("c_") || rustc_types.contains(&ty)
 }

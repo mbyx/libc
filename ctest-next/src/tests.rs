@@ -1,4 +1,4 @@
-use crate::{ffi_items::FfiItems, translator::Translator};
+use crate::{ffi_items::FfiItems, translator::Translator, Result, TranslationError};
 
 use syn::visit::Visit;
 
@@ -34,6 +34,12 @@ macro_rules! collect_idents {
     };
 }
 
+fn ty(s: &str) -> Result<String, TranslationError> {
+    let translator = Translator {};
+    let ty: syn::Type = syn::parse_str(s).unwrap();
+    translator.translate_type(&ty)
+}
+
 #[test]
 fn test_extraction_ffi_items() {
     let ast = syn::parse_file(ALL_ITEMS).unwrap();
@@ -50,44 +56,53 @@ fn test_extraction_ffi_items() {
 }
 
 #[test]
-fn test_translation_type_path() {
-    let translator = Translator::default();
-    let ty: syn::Type = syn::parse_str("std::option::Option<u8>").unwrap();
-
-    assert_eq!(translator.translate_type(&ty), "uint8_t");
-}
-
-#[test]
 fn test_translation_type_ptr() {
-    let translator = Translator::default();
-    let ty: syn::Type = syn::parse_str("*const *mut i32").unwrap();
-
-    assert_eq!(translator.translate_type(&ty), " int32_t* const*");
+    assert_eq!(
+        ty("*const *mut i32").unwrap(),
+        "int32_t * const*".to_string()
+    );
+    assert_eq!(
+        ty("*const [u128; 2 + 3]").unwrap(),
+        "unsigned __int128 (*const) [2 + 3]".to_string()
+    );
+    // FIXME(ctest): While not a valid C type, it will be used to
+    // generate a valid test in the future.
+    // assert_eq!(
+    //     ty("*const *mut [u8; 5]").unwrap(),
+    //     "uint8_t (*const *) [5]".to_string()
+    // );
 }
 
 #[test]
 fn test_translation_type_reference() {
-    let translator = Translator::default();
-    let ty: syn::Type = syn::parse_str("&u8").unwrap();
-
-    assert_eq!(translator.translate_type(&ty), "uint8_t*");
+    assert_eq!(ty("&u8").unwrap(), "const uint8_t*".to_string());
+    assert_eq!(ty("&&u8").unwrap(), "const uint8_t* const*".to_string());
+    assert_eq!(ty("*mut &u8").unwrap(), "const uint8_t* *".to_string());
+    assert_eq!(ty("& &mut u8").unwrap(), "uint8_t* const*".to_string());
 }
 
 #[test]
 fn test_translation_type_bare_fn() {
-    let translator = Translator::default();
-    let ty: syn::Type = syn::parse_str("fn(*mut u8, i16) -> &str").unwrap();
-
     assert_eq!(
-        translator.translate_type(&ty),
-        "char*(*)( uint8_t*, int16_t)"
+        ty("fn(*mut u8, i16) -> *const char").unwrap(),
+        "char const*(*)(uint8_t *, int16_t)".to_string()
+    );
+    assert_eq!(
+        ty("*const fn(*mut u8, &mut [u8; 16]) -> &mut *mut u8").unwrap(),
+        "uint8_t * *(*const)(uint8_t *, uint8_t (*) [16])".to_string()
     );
 }
 
 #[test]
 fn test_translation_type_array() {
-    let translator = Translator::default();
-    let ty: syn::Type = syn::parse_str("[&u8; 2 + 2]").unwrap();
+    assert_eq!(
+        ty("[&u8; 2 + 2]").unwrap(),
+        "const uint8_t*[2 + 2]".to_string()
+    );
+}
 
-    assert_eq!(translator.translate_type(&ty), "uint8_t*[2 + 2]");
+#[test]
+fn test_translation_fails_for_unsupported() {
+    assert!(ty("[&str; 2 + 2]").is_err());
+    assert!(ty("fn(*mut [u8], i16) -> *const char").is_err());
 }

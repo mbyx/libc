@@ -2444,6 +2444,8 @@ fn test_freebsd(target: &str) {
                 "sys/sem.h",
                 "sys/shm.h",
                 "sys/socket.h",
+                "sys/socketvar.h",
+                "netinet/in_pcb.h",	// must be after sys/socketvar.h
                 "sys/stat.h",
                 "sys/statvfs.h",
                 "sys/sysctl.h",
@@ -2845,6 +2847,10 @@ fn test_freebsd(target: &str) {
 
             // `splice` introduced in FreeBSD 14.2
             "splice" if Some(14) > freebsd_ver => true,
+
+            // Those are introduced in FreeBSD 15.
+            "xktls_session_onedir" | "xktls_session"
+                if Some(15) > freebsd_ver => true,
 
             _ => false,
         }
@@ -5565,6 +5571,11 @@ fn test_aix(target: &str) {
         // Skip 'sighandler_t' assignments.
         "SIG_DFL" | "SIG_ERR" | "SIG_IGN" => true,
 
+        // _ALL_SOURCE defines these errno values as aliases of other errno
+        // values, but POSIX requires each errno to be unique. Skip these
+        // values because non-unique values are being used which will
+        // fail the test when _ALL_SOURCE is defined.
+        "EWOULDBLOCK" | "ENOTEMPTY" => true,
         _ => false,
     });
 
