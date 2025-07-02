@@ -10,6 +10,6 @@ static bool __test_const_ON_val = ON;
 
 // Define a function that returns a pointer to the value of the constant to test.
 // This will later be called on the Rust side via FFI.
- bool* __test_const_ON(void) {
+extern "C" bool* __test_const_ON(void) {
     return &__test_const_ON_val;
 }

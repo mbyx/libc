@@ -4,12 +4,12 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <hierarchy.h>
+#include <simple.h>
 
-static bool __test_const_ON_val = ON;
+static char const* __test_const_A_val = A;
 
 // Define a function that returns a pointer to the value of the constant to test.
 // This will later be called on the Rust side via FFI.
- bool* __test_const_ON(void) {
-    return &__test_const_ON_val;
+ char const** __test_const_A(void) {
+    return &__test_const_A_val;
 }

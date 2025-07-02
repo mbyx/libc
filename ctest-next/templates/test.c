@@ -6,19 +6,21 @@
 #include <stdint.h>
 #include <stdio.h>
 
-{%- for header in headers +%}
+{%- for header in generator.headers +%}
 #include <{{ header }}>
 {%- endfor +%}
 
 {%- for constant in ffi_items.constants() +%}
-{%- let c_type = translator.translate_type(constant.ty).unwrap() +%}
 {%- let ident = constant.ident() +%}
+{%- let c_type = self.c_type(*constant)? +%}
+{%- let c_ident = self.c_ident(*constant)? +%}
+{%- let linkage = generator.language.linkage() +%}
 
-static {{ c_type }} __test_const_{{ ident }}_val = {{ ident }};
+static {{ c_type }} __test_const_{{ ident }}_val = {{ c_ident }};
 
 // Define a function that returns a pointer to the value of the constant to test.
 // This will later be called on the Rust side via FFI.
-{{ c_type }}* __test_const_{{ ident }}(void) {
+{{ linkage }} {{ c_type }}* __test_const_{{ ident }}(void) {
     return &__test_const_{{ ident }}_val;
 }
 {%- endfor +%}

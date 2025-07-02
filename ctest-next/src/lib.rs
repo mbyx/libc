@@ -31,3 +31,93 @@ pub type Error = Box<dyn std::error::Error>;
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// A boxed string for representing identifiers.
 type BoxStr = Box<str>;
+
+/// The programming language being compiled into a library.
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+pub enum Language {
+    /// The C programming language.
+    #[default]
+    C,
+    /// The C++ programming language.
+    CXX,
+}
+
+impl Language {
+    /// Return the extension corresponding to the chosen language.
+    pub fn extension(&self) -> &str {
+        match self {
+            Self::C => "c",
+            Self::CXX => "cpp",
+        }
+    }
+
+    /// Return the linkage corresponding to the chosen language.
+    pub fn linkage(&self) -> &str {
+        match self {
+            Self::C => "",
+            Self::CXX => "extern \"C\"",
+        }
+    }
+}
+
+/// A kind of item to which the C volatile qualifier could apply.
+///
+/// This is necessary because `ctest` does not parse the header file, so it
+/// does not know which items are volatile.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum VolatileItemKind {
+    /// A struct field.
+    StructField(Struct, Field),
+    /// An extern static.
+    Static(Static),
+    /// A function argument.
+    FnArgument(Fn, Box<Parameter>),
+    /// Function return type.
+    FnReturnType(Fn),
+}
+
+/// Inputs needed to rename or skip a field.
+#[derive(Debug, Clone)]
+pub(crate) enum MapInput<'a> {
+    Struct(&'a Struct),
+    Fn(&'a crate::Fn),
+    #[expect(unused)]
+    Field(&'a Struct, &'a Field),
+    Alias(&'a Type),
+    Const(&'a Const),
+    Static(&'a Static),
+    Type(&'a str, bool, bool),
+}
+
+// The From impls make it easier to write code in the test templates.
+
+impl<'a> From<&'a Const> for MapInput<'a> {
+    fn from(c: &'a Const) -> Self {
+        MapInput::Const(c)
+    }
+}
+
+impl<'a> From<&'a crate::Fn> for MapInput<'a> {
+    fn from(f: &'a crate::Fn) -> Self {
+        MapInput::Fn(f)
+    }
+}
+
+impl<'a> From<&'a Type> for MapInput<'a> {
+    fn from(a: &'a Type) -> Self {
+        MapInput::Alias(a)
+    }
+}
+
+impl<'a> From<&'a Static> for MapInput<'a> {
+    fn from(s: &'a Static) -> Self {
+        MapInput::Static(s)
+    }
+}
+
+impl<'a> From<&'a Struct> for MapInput<'a> {
+    fn from(s: &'a Struct) -> Self {
+        MapInput::Struct(s)
+    }
+}
