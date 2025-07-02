@@ -7,40 +7,35 @@ use std::{
 
 use askama::Template;
 use syn::visit::Visit;
+use thiserror::Error;
 
 use crate::{
     expand,
     ffi_items::FfiItems,
     template::{CTestTemplate, RustTestTemplate},
-    Const, Field, Language, Parameter, Result, Static, Struct, Type, VolatileItemKind,
+    Const, Field, Language, MapInput, Parameter, Result, Static, Struct, Type, VolatileItemKind,
 };
-/// Inputs needed to rename or skip a field.
-#[expect(unused)]
-#[derive(Debug, Clone)]
-pub(crate) enum MapInput<'a> {
-    Struct(&'a Struct),
-    Fn(&'a crate::Fn),
-    Field(&'a Struct, &'a Field),
-    Alias(&'a Type),
-    Const(&'a Const),
-    Static(&'a Static),
-    Type(&'a str, bool, bool),
-}
 
+/// A function that takes a mappable input and returns its mapping as Some, otherwise
+/// use the default name if None.
 type MappedName = Box<dyn Fn(&MapInput) -> Option<String>>;
+/// A function that determines whether to skip an item or not.
 type Skip = Box<dyn Fn(&MapInput) -> bool>;
+/// A function that determines whether a variable or field is volatile.
 type VolatileItem = Box<dyn Fn(VolatileItemKind) -> bool>;
+/// A function that determines whether a function arument is an array.
 type ArrayArg = Box<dyn Fn(crate::Fn, Parameter) -> bool>;
 
 /// A builder used to generate a test suite.
 #[derive(Default)]
 #[expect(missing_debug_implementations)]
 pub struct TestGenerator {
-    headers: Vec<String>,
+    pub(crate) headers: Vec<String>,
     pub(crate) target: Option<String>,
     pub(crate) includes: Vec<PathBuf>,
     out_dir: Option<PathBuf>,
-    language: Language,
+    /// The language chosen for testing bindings.
+    pub language: Language,
     flags: Vec<String>,
     defines: Vec<(String, Option<String>)>,
     mapped_names: Vec<MappedName>,
@@ -48,6 +43,20 @@ pub struct TestGenerator {
     verbose_skip: bool,
     volatile_item: Option<VolatileItem>,
     array_arg: Option<ArrayArg>,
+}
+
+#[derive(Debug, Error)]
+pub enum GenerationError {
+    #[error("unable to expand crate {0}: {1}")]
+    MacroExpansion(PathBuf, String),
+    #[error("unable to parse expanded crate {0}: {1}")]
+    RustSyntax(String, String),
+    #[error("unable to render {0} template: {1}")]
+    TemplateRender(String, String),
+    #[error("unable to create or write template file: {0}")]
+    OsError(std::io::Error),
+    #[error("unable to map Rust identifier or type")]
+    ItemMap,
 }
 
 impl TestGenerator {
@@ -271,119 +280,101 @@ impl TestGenerator {
         &mut self,
         crate_path: impl AsRef<Path>,
         output_file_path: impl AsRef<Path>,
-    ) -> Result<PathBuf> {
-        let expanded = expand(crate_path)?;
-        let ast = syn::parse_file(&expanded)?;
+    ) -> Result<PathBuf, GenerationError> {
+        let expanded = expand(&crate_path).map_err(|e| {
+            GenerationError::MacroExpansion(crate_path.as_ref().to_path_buf(), e.to_string())
+        })?;
+        let ast = syn::parse_file(&expanded)
+            .map_err(|e| GenerationError::RustSyntax(expanded, e.to_string()))?;
 
         let mut ffi_items = FfiItems::new();
         ffi_items.visit_file(&ast);
 
-        // FIXME: Does not filter out tests for fields.
+        // FIXME(ctest): Does not filter out tests for fields.
         self.filter_ffi_items(&mut ffi_items);
 
         let output_directory = self
             .out_dir
             .clone()
-            .unwrap_or_else(|| PathBuf::from(env::var_os("OUT_DIR").unwrap()));
+            .unwrap_or_else(|| env::var("OUT_DIR").unwrap().into());
         let output_file_path = output_directory.join(output_file_path);
 
         // Generate the Rust side of the tests.
-        File::create(output_file_path.with_extension("rs"))?
-            .write_all(RustTestTemplate::new(&ffi_items, self).render()?.as_bytes())?;
-
-        let extension = match self.language {
-            Language::C => "c",
-            Language::CXX => "cpp",
-        };
+        File::create(output_file_path.with_extension("rs"))
+            .map_err(GenerationError::OsError)?
+            .write_all(
+                RustTestTemplate::new(&ffi_items, self)
+                    .render()
+                    .map_err(|e| {
+                        GenerationError::TemplateRender("Rust".to_string(), e.to_string())
+                    })?
+                    .as_bytes(),
+            )
+            .map_err(GenerationError::OsError)?;
 
         // Generate the C/Cxx side of the tests.
-        let c_output_path = output_file_path.with_extension(extension);
-        let headers = self.headers.iter().map(|h| h.as_str()).collect();
-        File::create(&c_output_path)?.write_all(
-            CTestTemplate::new(headers, &ffi_items, self)
-                .render()?
-                .as_bytes(),
-        )?;
+        let c_output_path = output_file_path.with_extension(self.language.extension());
+        File::create(&c_output_path)
+            .map_err(GenerationError::OsError)?
+            .write_all(
+                CTestTemplate::new(&ffi_items, self)
+                    .render()
+                    .map_err(|e| {
+                        GenerationError::TemplateRender(
+                            self.language.extension().to_string(),
+                            e.to_string(),
+                        )
+                    })?
+                    .as_bytes(),
+            )
+            .map_err(GenerationError::OsError)?;
 
         Ok(output_file_path)
     }
 
-    /// Skips entire items such as structs, constants and aliases from being tested.
-    ///
-    /// This method is not responsible for skipping any specific tests or for skipping tests for
-    /// specific fields.
+    /// Skips entire items such as structs, constants, and aliases from being tested.
+    /// Does not skip specific tests or specific fields.
     fn filter_ffi_items(&self, ffi_items: &mut FfiItems) {
-        let (retained_aliases, skipped_aliases): (Vec<_>, Vec<_>) = ffi_items
-            .aliases
-            .drain(..)
-            .partition(|ty| !self.skips.iter().any(|f| f(&MapInput::Alias(ty))));
-        ffi_items.aliases = retained_aliases;
+        let verbose = self.verbose_skip;
 
-        let (retained_constants, skipped_constants): (Vec<_>, Vec<_>) = ffi_items
-            .constants
-            .drain(..)
-            .partition(|ty| !self.skips.iter().any(|f| f(&MapInput::Const(ty))));
-        ffi_items.constants = retained_constants;
-
-        let (retained_structs, skipped_structs): (Vec<_>, Vec<_>) = ffi_items
-            .structs
-            .drain(..)
-            .partition(|ty| !self.skips.iter().any(|f| f(&MapInput::Struct(ty))));
-        ffi_items.structs = retained_structs;
-
-        let (retained_fns, skipped_fns): (Vec<_>, Vec<_>) = ffi_items
-            .foreign_functions
-            .drain(..)
-            .partition(|ty| !self.skips.iter().any(|f| f(&MapInput::Fn(ty))));
-        ffi_items.foreign_functions = retained_fns;
-
-        let (retained_statics, skipped_statics): (Vec<_>, Vec<_>) = ffi_items
-            .foreign_statics
-            .drain(..)
-            .partition(|ty| !self.skips.iter().any(|f| f(&MapInput::Static(ty))));
-        ffi_items.foreign_statics = retained_statics;
-
-        if self.verbose_skip {
-            skipped_aliases
-                .iter()
-                .for_each(|ty| eprintln!("Skipping alias \"{}\"", ty.ident()));
-            skipped_constants
-                .iter()
-                .for_each(|ty| eprintln!("Skipping const \"{}\"", ty.ident()));
-            skipped_structs
-                .iter()
-                .for_each(|ty| eprintln!("Skipping struct \"{}\"", ty.ident()));
-            skipped_statics
-                .iter()
-                .for_each(|ty| eprintln!("Skipping static \"{}\"", ty.ident()));
-            skipped_fns
-                .iter()
-                .for_each(|ty| eprintln!("Skipping fn \"{}\"", ty.ident()));
+        macro_rules! filter {
+            ($field:ident, $variant:ident, $label:literal) => {{
+                let (retained, skipped): (Vec<_>, Vec<_>) = ffi_items
+                    .$field
+                    .drain(..)
+                    .partition(|item| !self.skips.iter().any(|f| f(&MapInput::$variant(item))));
+                ffi_items.$field = retained;
+                if verbose {
+                    skipped
+                        .iter()
+                        .for_each(|item| eprintln!("Skipping {} \"{}\"", $label, item.ident()));
+                }
+            }};
         }
+
+        filter!(aliases, Alias, "alias");
+        filter!(constants, Const, "const");
+        filter!(structs, Struct, "struct");
+        filter!(foreign_functions, Fn, "fn");
+        filter!(foreign_statics, Static, "static");
     }
 
-    /// Maps Rust identifiers or types of items to their C counterparts if specified, otherwise defaults to original.
-    pub(crate) fn map(&self, item: MapInput) -> String {
-        let found = self.mapped_names.iter().find_map(|f| f(&item));
-        if let Some(s) = found {
-            return s;
+    /// Maps Rust identifiers or types to C counterparts, or defaults to the original name.
+    pub(crate) fn map<'a>(&self, item: impl Into<MapInput<'a>>) -> Result<String, GenerationError> {
+        let item = item.into();
+        if let Some(mapped) = self.mapped_names.iter().find_map(|f| f(&item)) {
+            return Ok(mapped);
         }
-        match item {
+        Ok(match item {
             MapInput::Const(c) => c.ident().to_string(),
             MapInput::Fn(f) => f.ident().to_string(),
             MapInput::Static(s) => s.ident().to_string(),
             MapInput::Struct(s) => s.ident().to_string(),
             MapInput::Alias(t) => t.ident().to_string(),
             MapInput::Field(_, f) => f.ident().to_string(),
-            MapInput::Type(ty, is_struct, is_union) => {
-                if is_struct {
-                    format!("struct {ty}")
-                } else if is_union {
-                    format!("union {ty}")
-                } else {
-                    ty.to_string()
-                }
-            }
-        }
+            MapInput::Type(ty, true, _) => format!("struct {ty}"),
+            MapInput::Type(ty, false, true) => format!("union {ty}"),
+            MapInput::Type(ty, false, false) => ty.to_string(),
+        })
     }
 }

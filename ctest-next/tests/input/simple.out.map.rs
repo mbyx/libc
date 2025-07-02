@@ -40,8 +40,9 @@ mod generated_tests {
             NTESTS.fetch_add(1, Ordering::Relaxed);
         }
     }
+
     // Test that the string constant is the same in both Rust and C.
-    // While fat pointers can't be translated, we instead of * const c_char.
+    // While fat pointers can't be translated, we instead use * const c_char.
     pub fn const_A() {
         extern "C" {
             fn __test_const_A() -> *const *const u8;
@@ -55,6 +56,24 @@ mod generated_tests {
             let c = ::std::ffi::CStr::from_ptr(ptr as *const _);
             let c = c.to_str().expect("const A not utf8");
             check_same(val, c, "A string");
+        }
+    }
+
+    // Test that the string constant is the same in both Rust and C.
+    // While fat pointers can't be translated, we instead use * const c_char.
+    pub fn const_B() {
+        extern "C" {
+            fn __test_const_B() -> *const *const u8;
+        }
+        let val = B;
+        unsafe {
+            let ptr = *__test_const_B();
+            // c_char can be i8 or u8, so just cast to i8.
+            let val = CStr::from_ptr(ptr.cast::<i8>());
+            let val = val.to_str().expect("const B not utf8");
+            let c = ::std::ffi::CStr::from_ptr(ptr as *const _);
+            let c = c.to_str().expect("const B not utf8");
+            check_same(val, c, "B string");
         }
     }
 }
@@ -77,4 +96,5 @@ fn main() {
 // Run all tests by calling the functions that define them.
 fn run_all() {
     const_A();
+    const_B();
 }
