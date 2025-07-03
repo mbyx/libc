@@ -59,14 +59,12 @@ fn check_entrypoint(
     let rs = include_path
         .as_ref()
         .join(library_path.as_ref().with_extension("rs"));
-    let c = include_path.as_ref().join(
-        library_path
-            .as_ref()
-            .with_extension(gen.language.extension()),
-    );
+    let c = include_path
+        .as_ref()
+        .join(library_path.as_ref().with_extension("c"));
 
     bless_equal(output_file.with_extension("rs"), rs);
-    bless_equal(output_file.with_extension(gen.language.extension()), c);
+    bless_equal(output_file.with_extension("c"), c);
 
     if env::var("TARGET_PLATFORM") == env::var("HOST_PLATFORM") {
         generate_test(gen, &crate_path, &library_path).unwrap();
@@ -120,17 +118,6 @@ fn test_entrypoint_macro() {
     let library_path = "macro.out.a";
 
     let (mut gen, out_dir) = default_generator(1, "macro.h").unwrap();
-    check_entrypoint(&mut gen, out_dir, crate_path, library_path, include_path);
-}
-
-#[test]
-fn test_entrypoint_hierarchy_cpp() {
-    let include_path = PathBuf::from("tests/input");
-    let crate_path = include_path.join("hierarchy/lib.rs");
-    let library_path = "hierarchy.out.a";
-
-    let (mut gen, out_dir) = default_generator(1, "hierarchy.h").unwrap();
-    gen.language(ctest_next::Language::CXX);
     check_entrypoint(&mut gen, out_dir, crate_path, library_path, include_path);
 }
 

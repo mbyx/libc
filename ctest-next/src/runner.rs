@@ -23,7 +23,7 @@ pub fn generate_test(
     let host = env::var("HOST").unwrap_or_else(|_| env::var("HOST_PLATFORM").unwrap());
 
     let mut cfg = cc::Build::new();
-    cfg.file(output_file_path.with_extension(generator.language.extension()));
+    cfg.file(output_file_path.with_extension("c"));
     cfg.host(&host);
 
     if target.contains("msvc") {

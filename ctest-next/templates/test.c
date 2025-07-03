@@ -14,13 +14,12 @@
 {%- let ident = constant.ident() +%}
 {%- let c_type = self.c_type(*constant)? +%}
 {%- let c_ident = self.c_ident(*constant)? +%}
-{%- let linkage = generator.language.cpp_linkage() +%}
 
 static {{ c_type }} __test_const_{{ ident }}_val = {{ c_ident }};
 
 // Define a function that returns a pointer to the value of the constant to test.
 // This will later be called on the Rust side via FFI.
-{{ linkage }} {{ c_type }}* __test_const_{{ ident }}(void) {
+{{ c_type }}* __test_const_{{ ident }}(void) {
     return &__test_const_{{ ident }}_val;
 }
 {%- endfor +%}
