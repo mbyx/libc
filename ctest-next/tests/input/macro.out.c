@@ -5,3 +5,15 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <macro.h>
+
+ uint64_t __test_size_string(void) { return sizeof(char const*); }
+ uint64_t __test_align_string(void) {
+    typedef struct {
+        unsigned char c;
+        char const* v;
+    } type;
+    type t;
+    size_t t_addr = (size_t)(unsigned char*)(&t);
+    size_t v_addr = (size_t)(unsigned char*)(&t.v);
+    return t_addr >= v_addr? t_addr - v_addr : v_addr - t_addr;
+}

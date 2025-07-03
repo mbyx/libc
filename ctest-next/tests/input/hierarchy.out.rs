@@ -60,6 +60,35 @@ mod generated_tests {
             }
         }
     }
+
+    #[allow(non_snake_case)]
+    #[inline(never)]
+    fn size_align_in6_addr() {
+        extern "C" {
+            #[allow(non_snake_case)]
+            fn __test_size_in6_addr() -> u64;
+            #[allow(non_snake_case)]
+            fn __test_align_in6_addr() -> u64;
+        }
+        unsafe {
+            check_same(mem::size_of::<in6_addr>() as u64,
+                __test_size_in6_addr(), "in6_addr size");
+            check_same(mem::align_of::<in6_addr>() as u64,
+                __test_align_in6_addr(), "in6_addr align");
+        }
+    }
+    #[inline(never)]
+    #[allow(non_snake_case)]
+    fn sign_in6_addr() {
+        extern "C" {
+            #[allow(non_snake_case)]
+            fn __test_signed_in6_addr() -> u32;
+        }
+        unsafe {
+            check_same(((!(0 as in6_addr)) < (0 as in6_addr)) as u32,
+                    __test_signed_in6_addr(), "in6_addr signed");
+        }
+    }
 }
 
 use generated_tests::*;

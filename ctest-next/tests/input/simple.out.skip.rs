@@ -58,6 +58,35 @@ mod generated_tests {
             check_same(val, c, "A string");
         }
     }
+
+    #[allow(non_snake_case)]
+    #[inline(never)]
+    fn size_align_Byte() {
+        extern "C" {
+            #[allow(non_snake_case)]
+            fn __test_size_Byte() -> u64;
+            #[allow(non_snake_case)]
+            fn __test_align_Byte() -> u64;
+        }
+        unsafe {
+            check_same(mem::size_of::<Byte>() as u64,
+                __test_size_Byte(), "Byte size");
+            check_same(mem::align_of::<Byte>() as u64,
+                __test_align_Byte(), "Byte align");
+        }
+    }
+    #[inline(never)]
+    #[allow(non_snake_case)]
+    fn sign_Byte() {
+        extern "C" {
+            #[allow(non_snake_case)]
+            fn __test_signed_Byte() -> u32;
+        }
+        unsafe {
+            check_same(((!(0 as Byte)) < (0 as Byte)) as u32,
+                    __test_signed_Byte(), "Byte signed");
+        }
+    }
 }
 
 use generated_tests::*;

@@ -21,3 +21,18 @@ static char const* __test_const_B_val = C_B;
  char const** __test_const_B(void) {
     return &__test_const_B_val;
 }
+
+ uint64_t __test_size_Byte(void) { return sizeof(uint8_t); }
+ uint64_t __test_align_Byte(void) {
+    typedef struct {
+        unsigned char c;
+        uint8_t v;
+    } type;
+    type t;
+    size_t t_addr = (size_t)(unsigned char*)(&t);
+    size_t v_addr = (size_t)(unsigned char*)(&t.v);
+    return t_addr >= v_addr? t_addr - v_addr : v_addr - t_addr;
+}
+ uint32_t __test_signed_Byte(void) {
+    return (((uint8_t) -1) < 0);
+}
