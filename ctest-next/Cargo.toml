@@ -19,4 +19,3 @@ thiserror = "2.0.12"
 pretty_assertions = "1.4.1"
 tempfile = "3.20.0"
 
-[workspace]

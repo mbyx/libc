@@ -85,22 +85,6 @@ impl Translator {
         mutability.map(|_| "").unwrap_or("const").to_string()
     }
 
-    /// Determine whether a C type has a sign.
-    pub(crate) fn has_sign(&self, ty: &syn::Type) -> bool {
-        match ty {
-            syn::Type::Path(path) => {
-                let ident = path.path.segments.last().unwrap().ident.clone();
-                match self.translate_primitive_type(&ident).as_str() {
-                    "char" | "short" | "int" | "long" | "long long" | "int8_t" | "int16_t"
-                    | "int32_t" | "int64_t" | "uint8_t" | "uint16_t" | "uint32_t" | "uint64_t"
-                    | "size_t" | "ssize_t" => true,
-                    s => s.starts_with("signed ") || s.starts_with("unsigned "),
-                }
-            }
-            _ => false,
-        }
-    }
-
     /// Translate a Rust type into its equivalent C type.
     pub(crate) fn translate_type(&self, ty: &syn::Type) -> Result<String, TranslationError> {
         match ty {
@@ -234,7 +218,7 @@ impl Translator {
     }
 
     /// Translate a Rust primitive type into its C equivalent.
-    fn translate_primitive_type(&self, ty: &syn::Ident) -> String {
+    pub(crate) fn translate_primitive_type(&self, ty: &syn::Ident) -> String {
         match ty.to_string().as_str() {
             "usize" => "size_t".to_string(),
             "isize" => "ssize_t".to_string(),

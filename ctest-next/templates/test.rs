@@ -58,7 +58,7 @@ mod generated_tests {
         unsafe {
             let ptr = *__test_const_{{ ident }}();
             // c_char can be i8 or u8, so just cast to i8.
-            let val = CStr::from_ptr(ptr.cast::<i8>());
+            let val = CStr::from_ptr(val.cast::<i8>());
             let val = val.to_str().expect("const {{ ident }} not utf8");
             let c = ::std::ffi::CStr::from_ptr(ptr as *const _);
             let c = c.to_str().expect("const {{ ident }} not utf8");
@@ -95,7 +95,7 @@ mod generated_tests {
 
     #[allow(non_snake_case)]
     #[inline(never)]
-    fn size_align_{{ ident }}() {
+    pub fn size_align_{{ ident }}() {
         extern "C" {
             #[allow(non_snake_case)]
             fn __test_size_{{ ident }}() -> u64;
@@ -110,10 +110,10 @@ mod generated_tests {
         }
     }
 
-    {%- if translator.has_sign(alias.ty) +%}
+    {%- if self::has_sign(ffi_items, alias.ty) +%}
     #[inline(never)]
     #[allow(non_snake_case)]
-    fn sign_{{ ident }}() {
+    pub fn sign_{{ ident }}() {
         extern "C" {
             #[allow(non_snake_case)]
             fn __test_signed_{{ ident }}() -> u32;
@@ -146,6 +146,13 @@ fn main() {
 fn run_all() {
     {%- for constant in ffi_items.constants() +%}
     const_{{ constant.ident() }}();
+    {%- endfor +%}
+
+    {%- for alias in ffi_items.aliases() +%}
+    size_align_{{ alias.ident() }}();
+    {%- if self::has_sign(ffi_items, alias.ty) +%}
+    sign_{{ alias.ident() }}();
+    {%- endif +%}
     {%- endfor +%}
 }
 

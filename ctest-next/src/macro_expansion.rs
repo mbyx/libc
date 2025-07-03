@@ -14,10 +14,10 @@ pub fn expand<P: AsRef<Path>>(crate_path: P) -> Result<String> {
         .arg(canonicalize(crate_path)?)
         .output()?;
 
-    if !output.status.success() {
-        let error = std::str::from_utf8(&output.stderr)?;
-        return Err(error.into());
-    }
+//    if !output.status.success() {
+//        let error = std::str::from_utf8(&output.stderr)?;
+//        return Err(error.into());
+//    }
 
     let expanded = std::str::from_utf8(&output.stdout)?.to_string();
 

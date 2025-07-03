@@ -56,12 +56,12 @@ impl<'a> CTestTemplate<'a> {
         let item: MapInput<'a> = item.into();
 
         let (ident, ty) = match item {
-            MapInput::Const(c) => (c.ident(), self.translator.translate_type(&c.ty)),
-            MapInput::Alias(a) => (a.ident(), self.translator.translate_type(&a.ty)),
-            MapInput::Field(_, f) => (f.ident(), self.translator.translate_type(&f.ty)),
-            MapInput::Static(s) => (s.ident(), self.translator.translate_type(&s.ty)),
+            MapInput::Const(c) => (c.ident().to_string(), self.translator.translate_type(&c.ty)),
+            MapInput::Alias(a) => (a.ident().to_string(), Ok(a.ident().to_string())),
+            MapInput::Field(_, f) => (f.ident().to_string(), self.translator.translate_type(&f.ty)),
+            MapInput::Static(s) => (s.ident().to_string(), self.translator.translate_type(&s.ty)),
             MapInput::Fn(_) => unimplemented!(),
-            MapInput::Struct(_) => unimplemented!(),
+            MapInput::Struct(s) => (s.ident().to_string(), Ok(s.ident().to_string())),
             MapInput::Type(_, _) => panic!("MapInput::Type is not allowed!"),
         };
 
@@ -72,13 +72,36 @@ impl<'a> CTestTemplate<'a> {
             )
         })?;
 
-        let kind = if self.ffi_items.contains_struct(ident) {
+        let kind = if self.ffi_items.contains_struct(&ident) {
             TyKind::Struct
-        } else if self.ffi_items.contains_union(ident) {
+        } else if self.ffi_items.contains_union(&ident) {
             TyKind::Union
         } else {
             TyKind::Other
         };
         self.generator.map(MapInput::Type(&ty, kind))
+    }
+}
+
+/// Determine whether a C type has a sign.
+pub(crate) fn has_sign(ffi_items: &FfiItems, ty: &syn::Type) -> bool {
+    match ty {
+        syn::Type::Path(path) => {
+            let ident = path.path.segments.last().unwrap().ident.clone();
+            if let Some(aliased) = ffi_items
+                .aliases()
+                .iter()
+                .find(|a| a.ident() == ident.to_string())
+            {
+                return has_sign(ffi_items, &aliased.ty);
+            }
+            match Translator::new().translate_primitive_type(&ident).as_str() {
+                "char" | "short" | "int" | "long" | "long long" | "int8_t" | "int16_t"
+                | "int32_t" | "int64_t" | "uint8_t" | "uint16_t" | "uint32_t" | "uint64_t"
+                | "size_t" | "ssize_t" => true,
+                s => s.starts_with("signed ") || s.starts_with("unsigned "),
+            }
+        }
+        _ => false,
     }
 }

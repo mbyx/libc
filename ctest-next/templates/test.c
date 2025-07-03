@@ -28,7 +28,7 @@ static {{ c_type }} __test_const_{{ ident }}_val = {{ c_ident }};
 {%- for alias in ffi_items.aliases() +%}
 {%- let ident = alias.ident() +%}
 {%- let c_type = self.c_type(*alias)? -%}
-{%- let linkage = generator.language.linkage() +%}
+{%- let linkage = generator.language.cpp_linkage() +%}
 
 {{ linkage }} uint64_t __test_size_{{ ident }}(void) { return sizeof({{ c_type }}); }
 {{ linkage }} uint64_t __test_align_{{ ident }}(void) {
@@ -41,7 +41,7 @@ static {{ c_type }} __test_const_{{ ident }}_val = {{ c_ident }};
     size_t v_addr = (size_t)(unsigned char*)(&t.v);
     return t_addr >= v_addr? t_addr - v_addr : v_addr - t_addr;
 }
-{%- if translator.has_sign(alias.ty) +%}
+{%- if self::has_sign(ffi_items, alias.ty) +%}
 {{ linkage }} uint32_t __test_signed_{{ ident }}(void) {
     return ((({{ c_type }}) -1) < 0);
 }
