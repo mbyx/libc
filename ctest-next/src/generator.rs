@@ -13,7 +13,8 @@ use crate::{
     expand,
     ffi_items::FfiItems,
     template::{CTestTemplate, RustTestTemplate},
-    Const, Field, Language, MapInput, Parameter, Result, Static, Struct, Type, VolatileItemKind,
+    Const, Field, Language, MapInput, Parameter, Result, Static, Struct, TyKind, Type,
+    VolatileItemKind,
 };
 
 /// A function that takes a mappable input and returns its mapping as Some, otherwise
@@ -70,6 +71,16 @@ impl TestGenerator {
     /// The generate C test will be compiled by a C compiler, and this can be
     /// used to ensure that all the necessary header files are included to test
     /// all FFI definitions.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.header("foo.h")
+    ///    .header("bar.h");
+    /// ```
     pub fn header(&mut self, header: &str) -> &mut Self {
         self.headers.push(header.to_string());
         self
@@ -79,6 +90,15 @@ impl TestGenerator {
     ///
     /// Note that for Cargo builds this defaults to `$TARGET` and it's not
     /// necessary to call.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.target("x86_64-unknown-linux-gnu");
+    /// ```
     pub fn target(&mut self, target: &str) -> &mut Self {
         self.target = Some(target.to_string());
         self
@@ -88,18 +108,49 @@ impl TestGenerator {
     ///
     /// This is useful for if the C library is installed to a nonstandard
     /// location to ensure that compiling the C file succeeds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::env;
+    /// use std::path::PathBuf;
+    ///
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    /// cfg.include(out_dir.join("include"));
+    /// ```
     pub fn include<P: AsRef<Path>>(&mut self, p: P) -> &mut Self {
         self.includes.push(p.as_ref().to_owned());
         self
     }
 
     /// Configures the output directory of the generated Rust and C code.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.out_dir("path/to/output");
+    /// ```
     pub fn out_dir<P: AsRef<Path>>(&mut self, p: P) -> &mut Self {
         self.out_dir = Some(p.as_ref().to_owned());
         self
     }
 
     /// Skipped item names are printed to `stderr` if `skip` is `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.verbose_skip(true);
+    /// ```
     pub fn verbose_skip(&mut self, skip: bool) -> &mut Self {
         self.verbose_skip = skip;
         self
@@ -108,7 +159,23 @@ impl TestGenerator {
     /// Is volatile?
     ///
     /// The closure given takes a `VolatileKind` denoting a particular item that
-    /// could be volatile, and returns whether this is the case.
+    /// could be volatile, and returns whether this is the case. This is used to
+    /// make sure that the generated test code also has the volatile keyword.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::{TestGenerator, VolatileItemKind};
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.volatile_item(|item| {
+    ///     match item {
+    ///         VolatileItemKind::StructField(s, f)
+    ///             if s.ident() == "foo_struct" && f.ident() == "foo_field"
+    ///              => true,
+    ///         _ => false,
+    /// }});
+    /// ```
     pub fn volatile_item(&mut self, f: impl Fn(VolatileItemKind) -> bool + 'static) -> &mut Self {
         self.volatile_item = Some(Box::new(f));
         self
@@ -117,15 +184,39 @@ impl TestGenerator {
     /// Is argument of function an array?
     ///
     /// The closure denotes whether particular argument of a function is an array.
-    pub fn array_arg<F>(
-        &mut self,
-        f: impl Fn(crate::Fn, Parameter) -> bool + 'static,
-    ) -> &mut Self {
+    /// This is used to figure out which pointer argument is actually an array. For
+    /// example, `uint8_t*` could be a pointer to an integer or pointer to the start
+    /// of an array.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.array_arg(|func, arg| {
+    ///     match (func.ident(), arg.ident()) {
+    ///         ("foo", "bar") => true,
+    ///         _ => false,
+    /// }});
+    /// ```
+    pub fn array_arg(&mut self, f: impl Fn(crate::Fn, Parameter) -> bool + 'static) -> &mut Self {
         self.array_arg = Some(Box::new(f));
         self
     }
 
     /// Configures whether the tests for a struct are emitted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.skip_struct(|s| {
+    ///     s.ident().starts_with("foo_")
+    /// });
+    /// ```
     pub fn skip_struct(&mut self, f: impl Fn(&Struct) -> bool + 'static) -> &mut Self {
         self.skips.push(Box::new(move |item| {
             if let MapInput::Struct(struct_) = item {
@@ -138,6 +229,17 @@ impl TestGenerator {
     }
 
     /// Configures whether all tests for a field are skipped or not.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.skip_field(|s, f| {
+    ///     s.ident() == "foo_t" || (s.ident() == "bar_t" && f.ident() == "bar")
+    /// });
+    /// ```
     pub fn skip_field(&mut self, f: impl Fn(&Struct, &Field) -> bool + 'static) -> &mut Self {
         self.skips.push(Box::new(move |item| {
             if let MapInput::Field(struct_, field) = item {
@@ -150,6 +252,17 @@ impl TestGenerator {
     }
 
     /// Configures whether all tests for a typedef are skipped or not.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.skip_alias(|a| {
+    ///     a.ident().starts_with("foo_")
+    /// });
+    /// ```
     pub fn skip_alias(&mut self, f: impl Fn(&Type) -> bool + 'static) -> &mut Self {
         self.skips.push(Box::new(move |item| {
             if let MapInput::Alias(alias) = item {
@@ -162,6 +275,17 @@ impl TestGenerator {
     }
 
     /// Configures whether the tests for a constant's value are generated.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.skip_const(|s| {
+    ///     s.ident().starts_with("FOO_")
+    /// });
+    /// ```
     pub fn skip_const(&mut self, f: impl Fn(&Const) -> bool + 'static) -> &mut Self {
         self.skips.push(Box::new(move |item| {
             if let MapInput::Const(constant) = item {
@@ -174,6 +298,17 @@ impl TestGenerator {
     }
 
     /// Configures whether the tests for a static definition are generated.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.skip_static(|s| {
+    ///     s.ident().starts_with("foo_")
+    /// });
+    /// ```
     pub fn skip_static(&mut self, f: impl Fn(&Static) -> bool + 'static) -> &mut Self {
         self.skips.push(Box::new(move |item| {
             if let MapInput::Static(static_) = item {
@@ -186,6 +321,17 @@ impl TestGenerator {
     }
 
     /// Configures whether tests for a function definition are generated.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.skip_fn(|s| {
+    ///     s.ident().starts_with("foo_")
+    /// });
+    /// ```
     pub fn skip_fn(&mut self, f: impl Fn(&crate::Fn) -> bool + 'static) -> &mut Self {
         self.skips.push(Box::new(move |item| {
             if let MapInput::Fn(func) = item {
@@ -198,12 +344,39 @@ impl TestGenerator {
     }
 
     /// Sets the programming language.
+    ///
+    /// This is used to generate C++ versions of the test that can be compiled
+    /// and ran in the same way as C.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::env;
+    /// use std::path::PathBuf;
+    ///
+    /// use ctest_next::{TestGenerator, Language};
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.language(Language::CXX);
+    /// ```
     pub fn language(&mut self, language: Language) -> &mut Self {
         self.language = language;
         self
     }
 
     /// Add a flag to the C compiler invocation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::env;
+    /// use std::path::PathBuf;
+    ///
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.flag("-Wno-type-limits");
+    /// ```
     pub fn flag(&mut self, flag: &str) -> &mut Self {
         self.flags.push(flag.to_string());
         self
@@ -213,6 +386,16 @@ impl TestGenerator {
     ///
     /// This can be used to define various variables to configure how header
     /// files are included or what APIs are exposed from header files.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.define("_GNU_SOURCE", None)
+    ///    .define("_WIN32_WINNT", Some("0x8000"));
+    /// ```
     pub fn define(&mut self, k: &str, v: Option<&str>) -> &mut Self {
         self.defines
             .push((k.to_string(), v.map(std::string::ToString::to_string)));
@@ -220,7 +403,7 @@ impl TestGenerator {
     }
 
     /// Configures how Rust `const`s names are translated to C.
-    pub fn map_constant(&mut self, f: impl Fn(&Const) -> Option<String> + 'static) -> &mut Self {
+    pub fn rename_constant(&mut self, f: impl Fn(&Const) -> Option<String> + 'static) -> &mut Self {
         self.mapped_names.push(Box::new(move |item| {
             if let MapInput::Const(c) = item {
                 f(c)
@@ -232,7 +415,18 @@ impl TestGenerator {
     }
 
     /// Configures how a Rust struct field is translated to a C struct field.
-    pub fn map_field(
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.rename_field(|_s, field| {
+    ///     Some(field.ident().replace("foo", "bar"))
+    /// });
+    /// ```
+    pub fn rename_field(
         &mut self,
         f: impl Fn(&Struct, &Field) -> Option<String> + 'static,
     ) -> &mut Self {
@@ -247,7 +441,16 @@ impl TestGenerator {
     }
 
     /// Configures the name of a function in the generated C code.
-    pub fn map_fn(&mut self, f: impl Fn(&crate::Fn) -> Option<String> + 'static) -> &mut Self {
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.rename_fn(|f| Some(format!("{}_c", f.ident())));
+    /// ```
+    pub fn rename_fn(&mut self, f: impl Fn(&crate::Fn) -> Option<String> + 'static) -> &mut Self {
         self.mapped_names.push(Box::new(move |item| {
             if let MapInput::Fn(func) = item {
                 f(func)
@@ -259,13 +462,28 @@ impl TestGenerator {
     }
 
     /// Configures how a Rust type is translated to a C type.
-    pub fn map_type(
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ctest_next::{TestGenerator, TyKind};
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.rename_type(|ty, kind| {
+    ///     if kind == TyKind::Struct {
+    ///         Some(format!("{}_t", ty))
+    ///     } else {
+    ///         None
+    ///     }
+    /// });
+    /// ```
+    pub fn rename_type(
         &mut self,
-        f: impl Fn(&str, bool, bool) -> Option<String> + 'static,
+        f: impl Fn(&str, TyKind) -> Option<String> + 'static,
     ) -> &mut Self {
         self.mapped_names.push(Box::new(move |item| {
-            if let MapInput::Type(ty, is_struct, is_union) = item {
-                f(ty, *is_struct, *is_union)
+            if let MapInput::Type(ty, kind) = item {
+                f(ty, *kind)
             } else {
                 None
             }
@@ -321,7 +539,7 @@ impl TestGenerator {
                     .render()
                     .map_err(|e| {
                         GenerationError::TemplateRender(
-                            self.language.extension().to_string(),
+                            self.language.display_name().to_string(),
                             e.to_string(),
                         )
                     })?
@@ -372,9 +590,9 @@ impl TestGenerator {
             MapInput::Struct(s) => s.ident().to_string(),
             MapInput::Alias(t) => t.ident().to_string(),
             MapInput::Field(_, f) => f.ident().to_string(),
-            MapInput::Type(ty, true, _) => format!("struct {ty}"),
-            MapInput::Type(ty, false, true) => format!("union {ty}"),
-            MapInput::Type(ty, false, false) => ty.to_string(),
+            MapInput::Type(ty, TyKind::Struct) => format!("struct {ty}"),
+            MapInput::Type(ty, TyKind::Union) => format!("union {ty}"),
+            MapInput::Type(ty, TyKind::Other) => ty.to_string(),
         })
     }
 }

@@ -14,7 +14,7 @@
 {%- let ident = constant.ident() +%}
 {%- let c_type = self.c_type(*constant)? +%}
 {%- let c_ident = self.c_ident(*constant)? +%}
-{%- let linkage = generator.language.linkage() +%}
+{%- let linkage = generator.language.cpp_linkage() +%}
 
 static {{ c_type }} __test_const_{{ ident }}_val = {{ c_ident }};
 
