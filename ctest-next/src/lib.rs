@@ -52,10 +52,18 @@ impl Language {
     }
 
     /// Return the linkage corresponding to the chosen language.
-    pub fn linkage(&self) -> &str {
+    pub(crate) fn cpp_linkage(&self) -> &str {
         match self {
             Self::C => "",
             Self::CXX => "extern \"C\"",
+        }
+    }
+
+    /// Return the display name of the programming language.
+    pub(crate) fn display_name(&self) -> &str {
+        match self {
+            Self::C => "C",
+            Self::CXX => "C++",
         }
     }
 }
@@ -77,6 +85,18 @@ pub enum VolatileItemKind {
     FnReturnType(Fn),
 }
 
+/// The kind of type a C type can be.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TyKind {
+    /// A struct type.
+    Struct,
+    /// A union type.
+    Union,
+    /// Any other type.
+    Other,
+}
+
 /// Inputs needed to rename or skip a field.
 #[derive(Debug, Clone)]
 pub(crate) enum MapInput<'a> {
@@ -87,7 +107,7 @@ pub(crate) enum MapInput<'a> {
     Alias(&'a Type),
     Const(&'a Const),
     Static(&'a Static),
-    Type(&'a str, bool, bool),
+    Type(&'a str, TyKind),
 }
 
 // The From impls make it easier to write code in the test templates.

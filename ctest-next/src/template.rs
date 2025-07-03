@@ -3,7 +3,7 @@ use quote::ToTokens;
 
 use crate::{
     ffi_items::FfiItems, generator::GenerationError, translator::Translator, MapInput, Result,
-    TestGenerator,
+    TestGenerator, TyKind,
 };
 
 /// Represents the Rust side of the generated testing suite.
@@ -60,7 +60,7 @@ impl<'a> CTestTemplate<'a> {
             MapInput::Static(s) => (s.ident(), self.translator.translate_type(&s.ty)),
             MapInput::Fn(_) => unimplemented!(),
             MapInput::Struct(_) => unimplemented!(),
-            MapInput::Type(_, _, _) => panic!("MapInput::Type is not allowed!"),
+            MapInput::Type(_, _) => panic!("MapInput::Type is not allowed!"),
         };
 
         let ty = ty.map_err(|e| {
@@ -70,10 +70,13 @@ impl<'a> CTestTemplate<'a> {
             )
         })?;
 
-        self.generator.map(MapInput::Type(
-            &ty,
-            self.ffi_items.contains_struct(ident),
-            self.ffi_items.contains_union(ident),
-        ))
+        let kind = if self.ffi_items.contains_struct(ident) {
+            TyKind::Struct
+        } else if self.ffi_items.contains_union(ident) {
+            TyKind::Union
+        } else {
+            TyKind::Other
+        };
+        self.generator.map(MapInput::Type(&ty, kind))
     }
 }

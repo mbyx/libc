@@ -34,8 +34,7 @@ fn bless_equal(new_file: impl AsRef<Path>, old_file: impl AsRef<Path>) {
     let new_content = fs::read_to_string(&new_file).unwrap().replace("\r", "");
     let old_content = fs::read_to_string(&old_file).unwrap().replace("\r", "");
 
-    let equal = new_content == old_content;
-    if env::var("LIBC_BLESS").is_ok() && !equal {
+    if env::var("LIBC_BLESS").is_ok() {
         fs::write(old_file, &new_content).unwrap();
     } else {
         // Use pretty_assertions for easier diffs.
@@ -109,7 +108,7 @@ fn test_map_simple() {
     let library_path = "simple.out.map.a";
 
     let (mut gen, out_dir) = default_generator(1, "simple.h").unwrap();
-    gen.map_constant(|c| (c.ident() == "B").then(|| "C_B".to_string()));
+    gen.rename_constant(|c| (c.ident() == "B").then(|| "C_B".to_string()));
 
     check_entrypoint(&mut gen, out_dir, crate_path, library_path, include_path);
 }

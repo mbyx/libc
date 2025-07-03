@@ -104,7 +104,12 @@ fn visit_foreign_item_fn(table: &mut FfiItems, i: &syn::ForeignItemFn, abi: &Abi
         .iter()
         .map(|arg| match arg {
             syn::FnArg::Typed(arg) => Parameter {
-                pattern: arg.pat.deref().clone(),
+                ident: match arg.pat.deref() {
+                    syn::Pat::Ident(i) => i.ident.to_string().into_boxed_str(),
+                    _ => {
+                        unimplemented!("Foreign functions are unlikely to have any other pattern.")
+                    }
+                },
                 ty: arg.ty.deref().clone(),
             },
             syn::FnArg::Receiver(_) => {
