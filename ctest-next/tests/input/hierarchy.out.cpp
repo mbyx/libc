@@ -13,3 +13,18 @@ static bool __test_const_ON_val = ON;
 extern "C" bool* __test_const_ON(void) {
     return &__test_const_ON_val;
 }
+
+extern "C" uint64_t __test_size_in6_addr(void) { return sizeof(uint32_t); }
+extern "C" uint64_t __test_align_in6_addr(void) {
+    typedef struct {
+        unsigned char c;
+        uint32_t v;
+    } type;
+    type t;
+    size_t t_addr = (size_t)(unsigned char*)(&t);
+    size_t v_addr = (size_t)(unsigned char*)(&t.v);
+    return t_addr >= v_addr? t_addr - v_addr : v_addr - t_addr;
+}
+extern "C" uint32_t __test_signed_in6_addr(void) {
+    return (((uint32_t) -1) < 0);
+}

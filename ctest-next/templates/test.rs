@@ -89,6 +89,42 @@ mod generated_tests {
     }
     {%- endif +%}
     {%- endfor +%}
+
+    {%- for alias in ffi_items.aliases() +%}
+    {%- let ident = alias.ident() +%}
+
+    #[allow(non_snake_case)]
+    #[inline(never)]
+    fn size_align_{{ ident }}() {
+        extern "C" {
+            #[allow(non_snake_case)]
+            fn __test_size_{{ ident }}() -> u64;
+            #[allow(non_snake_case)]
+            fn __test_align_{{ ident }}() -> u64;
+        }
+        unsafe {
+            check_same(mem::size_of::<{{ ident }}>() as u64,
+                __test_size_{{ ident }}(), "{{ ident }} size");
+            check_same(mem::align_of::<{{ ident }}>() as u64,
+                __test_align_{{ ident }}(), "{{ ident }} align");
+        }
+    }
+
+    {%- if translator.has_sign(alias.ty) +%}
+    #[inline(never)]
+    #[allow(non_snake_case)]
+    fn sign_{{ ident }}() {
+        extern "C" {
+            #[allow(non_snake_case)]
+            fn __test_signed_{{ ident }}() -> u32;
+        }
+        unsafe {
+            check_same(((!(0 as {{ ident }})) < (0 as {{ ident }})) as u32,
+                    __test_signed_{{ ident }}(), "{{ ident }} signed");
+        }
+    }
+    {%- endif +%}
+    {%- endfor +%}
 }
 
 use generated_tests::*;

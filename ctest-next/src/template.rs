@@ -11,6 +11,7 @@ use crate::{
 #[template(path = "test.rs")]
 pub(crate) struct RustTestTemplate<'a> {
     ffi_items: &'a FfiItems,
+    translator: Translator,
     #[expect(unused)]
     generator: &'a TestGenerator,
 }
@@ -29,6 +30,7 @@ impl<'a> RustTestTemplate<'a> {
     pub(crate) fn new(ffi_items: &'a FfiItems, generator: &'a TestGenerator) -> Self {
         Self {
             ffi_items,
+            translator: Translator::new(),
             generator,
         }
     }

@@ -40,6 +40,23 @@ mod generated_tests {
             NTESTS.fetch_add(1, Ordering::Relaxed);
         }
     }
+
+    #[allow(non_snake_case)]
+    #[inline(never)]
+    fn size_align_string() {
+        extern "C" {
+            #[allow(non_snake_case)]
+            fn __test_size_string() -> u64;
+            #[allow(non_snake_case)]
+            fn __test_align_string() -> u64;
+        }
+        unsafe {
+            check_same(mem::size_of::<string>() as u64,
+                __test_size_string(), "string size");
+            check_same(mem::align_of::<string>() as u64,
+                __test_align_string(), "string align");
+        }
+    }
 }
 
 use generated_tests::*;
