@@ -65,12 +65,7 @@ impl<'a> CTestTemplate<'a> {
             MapInput::Type(_, _) => panic!("MapInput::Type is not allowed!"),
         };
 
-        let ty = ty.map_err(|e| {
-            GenerationError::TemplateRender(
-                self.generator.language.extension().to_string(),
-                e.to_string(),
-            )
-        })?;
+        let ty = ty.map_err(|e| GenerationError::TemplateRender("C".to_string(), e.to_string()))?;
 
         let kind = if self.ffi_items.contains_struct(&ident) {
             TyKind::Struct

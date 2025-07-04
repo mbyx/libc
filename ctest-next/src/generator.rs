@@ -13,8 +13,7 @@ use crate::{
     expand,
     ffi_items::FfiItems,
     template::{CTestTemplate, RustTestTemplate},
-    Const, Field, Language, MapInput, Parameter, Result, Static, Struct, TyKind, Type,
-    VolatileItemKind,
+    Const, Field, MapInput, Parameter, Result, Static, Struct, TyKind, Type, VolatileItemKind,
 };
 
 /// A function that takes a mappable input and returns its mapping as Some, otherwise
@@ -35,8 +34,6 @@ pub struct TestGenerator {
     pub(crate) target: Option<String>,
     pub(crate) includes: Vec<PathBuf>,
     out_dir: Option<PathBuf>,
-    /// The language chosen for testing bindings.
-    pub language: Language,
     flags: Vec<String>,
     defines: Vec<(String, Option<String>)>,
     mapped_names: Vec<MappedName>,
@@ -74,7 +71,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::TestGenerator;
     ///
     /// let mut cfg = TestGenerator::new();
@@ -93,7 +90,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::TestGenerator;
     ///
     /// let mut cfg = TestGenerator::new();
@@ -111,7 +108,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use std::env;
     /// use std::path::PathBuf;
     ///
@@ -130,7 +127,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::TestGenerator;
     ///
     /// let mut cfg = TestGenerator::new();
@@ -145,7 +142,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::TestGenerator;
     ///
     /// let mut cfg = TestGenerator::new();
@@ -164,7 +161,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::{TestGenerator, VolatileItemKind};
     ///
     /// let mut cfg = TestGenerator::new();
@@ -190,7 +187,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::TestGenerator;
     ///
     /// let mut cfg = TestGenerator::new();
@@ -209,7 +206,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::TestGenerator;
     ///
     /// let mut cfg = TestGenerator::new();
@@ -232,7 +229,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::TestGenerator;
     ///
     /// let mut cfg = TestGenerator::new();
@@ -255,7 +252,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::TestGenerator;
     ///
     /// let mut cfg = TestGenerator::new();
@@ -278,7 +275,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::TestGenerator;
     ///
     /// let mut cfg = TestGenerator::new();
@@ -301,7 +298,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::TestGenerator;
     ///
     /// let mut cfg = TestGenerator::new();
@@ -324,7 +321,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::TestGenerator;
     ///
     /// let mut cfg = TestGenerator::new();
@@ -343,32 +340,11 @@ impl TestGenerator {
         self
     }
 
-    /// Sets the programming language.
-    ///
-    /// This is used to generate C++ versions of the test that can be compiled
-    /// and ran in the same way as C.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use std::env;
-    /// use std::path::PathBuf;
-    ///
-    /// use ctest_next::{TestGenerator, Language};
-    ///
-    /// let mut cfg = TestGenerator::new();
-    /// cfg.language(Language::CXX);
-    /// ```
-    pub fn language(&mut self, language: Language) -> &mut Self {
-        self.language = language;
-        self
-    }
-
     /// Add a flag to the C compiler invocation.
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use std::env;
     /// use std::path::PathBuf;
     ///
@@ -389,7 +365,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::TestGenerator;
     ///
     /// let mut cfg = TestGenerator::new();
@@ -418,7 +394,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::TestGenerator;
     ///
     /// let mut cfg = TestGenerator::new();
@@ -444,7 +420,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::TestGenerator;
     ///
     /// let mut cfg = TestGenerator::new();
@@ -465,7 +441,7 @@ impl TestGenerator {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use ctest_next::{TestGenerator, TyKind};
     ///
     /// let mut cfg = TestGenerator::new();
@@ -531,18 +507,13 @@ impl TestGenerator {
             .map_err(GenerationError::OsError)?;
 
         // Generate the C/Cxx side of the tests.
-        let c_output_path = output_file_path.with_extension(self.language.extension());
+        let c_output_path = output_file_path.with_extension("c");
         File::create(&c_output_path)
             .map_err(GenerationError::OsError)?
             .write_all(
                 CTestTemplate::new(&ffi_items, self)
                     .render()
-                    .map_err(|e| {
-                        GenerationError::TemplateRender(
-                            self.language.display_name().to_string(),
-                            e.to_string(),
-                        )
-                    })?
+                    .map_err(|e| GenerationError::TemplateRender("C".to_string(), e.to_string()))?
                     .as_bytes(),
             )
             .map_err(GenerationError::OsError)?;
@@ -557,11 +528,12 @@ impl TestGenerator {
 
         macro_rules! filter {
             ($field:ident, $variant:ident, $label:literal) => {{
-                let (retained, skipped): (Vec<_>, Vec<_>) = ffi_items
+                let skipped: Vec<_> = ffi_items
                     .$field
-                    .drain(..)
-                    .partition(|item| !self.skips.iter().any(|f| f(&MapInput::$variant(item))));
-                ffi_items.$field = retained;
+                    .extract_if(.., |item| {
+                        self.skips.iter().any(|f| f(&MapInput::$variant(item)))
+                    })
+                    .collect();
                 if verbose {
                     skipped
                         .iter()

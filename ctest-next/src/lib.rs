@@ -32,42 +32,6 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// A boxed string for representing identifiers.
 type BoxStr = Box<str>;
 
-/// The programming language being compiled into a library.
-#[derive(Clone, Default, Debug, PartialEq, Eq)]
-pub enum Language {
-    /// The C programming language.
-    #[default]
-    C,
-    /// The C++ programming language.
-    CXX,
-}
-
-impl Language {
-    /// Return the extension corresponding to the chosen language.
-    pub fn extension(&self) -> &str {
-        match self {
-            Self::C => "c",
-            Self::CXX => "cpp",
-        }
-    }
-
-    /// Return the linkage corresponding to the chosen language.
-    pub(crate) fn cpp_linkage(&self) -> &str {
-        match self {
-            Self::C => "",
-            Self::CXX => "extern \"C\"",
-        }
-    }
-
-    /// Return the display name of the programming language.
-    pub(crate) fn display_name(&self) -> &str {
-        match self {
-            Self::C => "C",
-            Self::CXX => "C++",
-        }
-    }
-}
-
 /// A kind of item to which the C volatile qualifier could apply.
 ///
 /// This is necessary because `ctest` does not parse the header file, so it

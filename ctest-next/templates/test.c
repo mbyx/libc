@@ -14,24 +14,22 @@
 {%- let ident = constant.ident() +%}
 {%- let c_type = self.c_type(*constant)? +%}
 {%- let c_ident = self.c_ident(*constant)? +%}
-{%- let linkage = generator.language.cpp_linkage() +%}
 
 static {{ c_type }} __test_const_{{ ident }}_val = {{ c_ident }};
 
 // Define a function that returns a pointer to the value of the constant to test.
 // This will later be called on the Rust side via FFI.
-{{ linkage }} {{ c_type }}* __test_const_{{ ident }}(void) {
+{{ c_type }}* __test_const_{{ ident }}(void) {
     return &__test_const_{{ ident }}_val;
 }
 {%- endfor +%}
 
 {%- for alias in ffi_items.aliases() +%}
 {%- let ident = alias.ident() +%}
-{%- let c_type = self.c_type(*alias)? -%}
-{%- let linkage = generator.language.cpp_linkage() +%}
+{%- let c_type = self.c_type(*alias)? +%}
 
-{{ linkage }} uint64_t __test_size_{{ ident }}(void) { return sizeof({{ c_type }}); }
-{{ linkage }} uint64_t __test_align_{{ ident }}(void) {
+uint64_t __test_size_{{ ident }}(void) { return sizeof({{ c_type }}); }
+uint64_t __test_align_{{ ident }}(void) {
     typedef struct {
         unsigned char c;
         {{ c_type }} v;
@@ -42,7 +40,7 @@ static {{ c_type }} __test_const_{{ ident }}_val = {{ c_ident }};
     return t_addr >= v_addr? t_addr - v_addr : v_addr - t_addr;
 }
 {%- if self::has_sign(ffi_items, alias.ty) +%}
-{{ linkage }} uint32_t __test_signed_{{ ident }}(void) {
+uint32_t __test_signed_{{ ident }}(void) {
     return ((({{ c_type }}) -1) < 0);
 }
 {%- endif +%}
