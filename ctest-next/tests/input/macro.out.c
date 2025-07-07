@@ -6,14 +6,58 @@
 #include <stdio.h>
 #include <macro.h>
 
- uint64_t __test_size_string(void) { return sizeof(char const*); }
- uint64_t __test_align_string(void) {
+uint64_t __test_size_string(void) { return sizeof(string); }
+uint64_t __test_align_string(void) {
     typedef struct {
         unsigned char c;
-        char const* v;
+        string v;
     } type;
     type t;
     size_t t_addr = (size_t)(unsigned char*)(&t);
     size_t v_addr = (size_t)(unsigned char*)(&t.v);
     return t_addr >= v_addr? t_addr - v_addr : v_addr - t_addr;
 }
+
+#ifdef _MSC_VER
+// Disable signed/unsigned conversion warnings on MSVC.
+// These trigger even if the conversion is explicit.
+#  pragma warning(disable:4365)
+#endif
+string __test_roundtrip_char*(
+        int32_t rust_size, string value, int* error, unsigned char* pad
+) {
+    volatile unsigned char* p = (volatile unsigned char*)&value;
+    int size = (int)sizeof(string);
+    if (size != rust_size) {
+        fprintf(
+            stderr,
+            "size of string is %d in C and %d in Rust\n",
+            (int)size, (int)rust_size
+        );
+        *error = 1;
+        return value;
+    }
+    int i = 0;
+    for (i = 0; i < size; ++i) {
+            if (pad[i]) { continue; }
+            // fprintf(stdout, "C testing byte %d of %d of \"char*\"\n", i, size);
+            unsigned char c = (unsigned char)(i % 256);
+            c = c == 0? 42 : c;
+            if (p[i] != c) {
+                *error = 1;
+                fprintf(
+                    stderr,
+                    "rust[%d] = %d != %d (C): Rust \"char*\" -> C\n",
+                    i, (int)p[i], (int)c
+                );
+            }
+            unsigned char d
+                = (unsigned char)(255) - (unsigned char)(i % 256);
+            d = d == 0? 42: d;
+            p[i] = d;
+    }
+    return value;
+}
+#ifdef _MSC_VER
+#  pragma warning(default:4365)
+#endif

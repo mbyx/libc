@@ -6,7 +6,6 @@
 mod generated_tests {
     #![allow(non_snake_case)]
     #![deny(improper_ctypes_definitions)]
-    use std::ffi::CStr;
     use std::fmt::{Debug, LowerHex};
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::{mem, ptr, slice};
@@ -44,6 +43,7 @@ mod generated_tests {
     // Test that the string constant is the same in both Rust and C.
     // While fat pointers can't be translated, we instead use * const c_char.
     pub fn const_A() {
+        use std::ffi::CStr;
         extern "C" {
             fn __test_const_A() -> *const *const u8;
         }
@@ -51,7 +51,7 @@ mod generated_tests {
         unsafe {
             let ptr = *__test_const_A();
             // c_char can be i8 or u8, so just cast to i8.
-            let val = CStr::from_ptr(ptr.cast::<i8>());
+            let val = CStr::from_ptr(val.cast::<i8>());
             let val = val.to_str().expect("const A not utf8");
             let c = ::std::ffi::CStr::from_ptr(ptr as *const _);
             let c = c.to_str().expect("const A not utf8");
@@ -62,6 +62,7 @@ mod generated_tests {
     // Test that the string constant is the same in both Rust and C.
     // While fat pointers can't be translated, we instead use * const c_char.
     pub fn const_B() {
+        use std::ffi::CStr;
         extern "C" {
             fn __test_const_B() -> *const *const u8;
         }
@@ -69,7 +70,7 @@ mod generated_tests {
         unsafe {
             let ptr = *__test_const_B();
             // c_char can be i8 or u8, so just cast to i8.
-            let val = CStr::from_ptr(ptr.cast::<i8>());
+            let val = CStr::from_ptr(val.cast::<i8>());
             let val = val.to_str().expect("const B not utf8");
             let c = ::std::ffi::CStr::from_ptr(ptr as *const _);
             let c = c.to_str().expect("const B not utf8");
@@ -79,7 +80,7 @@ mod generated_tests {
 
     #[allow(non_snake_case)]
     #[inline(never)]
-    fn size_align_Byte() {
+    pub fn size_align_Byte() {
         extern "C" {
             #[allow(non_snake_case)]
             fn __test_size_Byte() -> u64;
@@ -95,7 +96,7 @@ mod generated_tests {
     }
     #[inline(never)]
     #[allow(non_snake_case)]
-    fn sign_Byte() {
+    pub fn sign_Byte() {
         extern "C" {
             #[allow(non_snake_case)]
             fn __test_signed_Byte() -> u32;
@@ -103,6 +104,80 @@ mod generated_tests {
         unsafe {
             check_same(((!(0 as Byte)) < (0 as Byte)) as u32,
                     __test_signed_Byte(), "Byte signed");
+        }
+    }
+
+    #[allow(non_snake_case, unused_mut, unused_variables, deprecated)]
+    #[inline(never)]
+    fn roundtrip_padding_u8() -> Vec<u8> {
+        // stores (offset, size) for each field
+        let mut v = Vec::<(usize, usize)>::new();
+        let foo = std::mem::MaybeUninit::<u8>::uninit();
+        let foo = foo.as_ptr();
+        // This vector contains `1` if the byte is padding
+        // and `0` if the byte is not padding.
+        let mut pad = Vec::<u8>::new();
+        // Initialize all bytes as:
+        //  - padding if we have fields, this means that only
+        //  the fields will be checked
+        //  - no-padding if we have a type alias: if this
+        //  causes problems the type alias should be skipped
+        pad.resize(mem::size_of::<u8>(), 0);
+        for (off, size) in &v {
+            for i in 0..*size {
+                pad[off + i] = 0;
+            }
+        }
+        pad
+    }
+
+    #[allow(non_snake_case, deprecated)]
+    #[inline(never)]
+    fn roundtrip_u8() {
+        use std::ffi::c_int;
+        type U = u8;
+        #[allow(improper_ctypes)]
+        extern "C" {
+            #[allow(non_snake_case)]
+            fn __test_roundtrip_u8(
+                size: i32, x: U, e: *mut c_int, pad: *const u8
+            ) -> U;
+        }
+        let pad = roundtrip_padding_u8();
+        unsafe {
+            use std::mem::{MaybeUninit, size_of};
+            let mut error: c_int = 0;
+            let mut y = MaybeUninit::<U>::uninit();
+            let mut x = MaybeUninit::<U>::uninit();
+            let x_ptr = x.as_mut_ptr().cast::<u8>();
+            let y_ptr = y.as_mut_ptr().cast::<u8>();
+            let sz = size_of::<U>();
+            for i in 0..sz {
+                let c: u8 = (i % 256) as u8;
+                let c = if c == 0 { 42 } else { c };
+                let d: u8 = 255_u8 - (i % 256) as u8;
+                let d = if d == 0 { 42 } else { d };
+                x_ptr.add(i).write_volatile(c);
+                y_ptr.add(i).write_volatile(d);
+            }
+            let r: U = __test_roundtrip_u8(sz as i32, x.assume_init(), &mut error, pad.as_ptr());
+            if error == 1 {
+                FAILED.store(true, Ordering::Relaxed);
+                return;
+            }
+            for i in 0..size_of::<U>() {
+                if pad[i] == 1 { continue; }
+                // eprintln!("Rust testing byte {i} of {} of u8", size_of::<U>());
+                let rust = (*y_ptr.add(i)) as usize;
+                let c = (&r as *const _ as *const u8)
+                            .add(i).read_volatile() as usize;
+                if rust != c {
+                    eprintln!(
+                        "rust [{i}] = {rust} != {c} (C): C \"u8\" -> Rust",
+                    );
+                    FAILED.store(true, Ordering::Relaxed);
+                }
+            }
         }
     }
 }
@@ -126,4 +201,6 @@ fn main() {
 fn run_all() {
     const_A();
     const_B();
+    size_align_Byte();
+    sign_Byte();
 }

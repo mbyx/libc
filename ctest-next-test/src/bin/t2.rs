@@ -1,5 +1,5 @@
 #![cfg(not(test))]
-// #![deny(warnings)]
+#![deny(warnings)]
 
 use ctest_next_test::t2::*;
 

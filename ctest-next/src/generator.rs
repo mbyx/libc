@@ -25,6 +25,8 @@ type Skip = Box<dyn Fn(&MapInput) -> bool>;
 type VolatileItem = Box<dyn Fn(VolatileItemKind) -> bool>;
 /// A function that determines whether a function arument is an array.
 type ArrayArg = Box<dyn Fn(crate::Fn, Parameter) -> bool>;
+/// A function that determines whether to skip round trip testing, taking in the identifier name.
+type SkipRoundTrip = Box<dyn Fn(&str) -> bool>;
 
 /// A builder used to generate a test suite.
 #[derive(Default)]
@@ -37,10 +39,11 @@ pub struct TestGenerator {
     flags: Vec<String>,
     defines: Vec<(String, Option<String>)>,
     mapped_names: Vec<MappedName>,
-    skips: Vec<Skip>,
+    pub(crate) skips: Vec<Skip>,
     verbose_skip: bool,
-    volatile_item: Option<VolatileItem>,
-    array_arg: Option<ArrayArg>,
+    pub(crate) volatile_item: Option<VolatileItem>,
+    pub(crate) array_arg: Option<ArrayArg>,
+    pub(crate) skip_roundtrip: Option<SkipRoundTrip>,
 }
 
 #[derive(Debug, Error)]
@@ -55,6 +58,8 @@ pub enum GenerationError {
     OsError(std::io::Error),
     #[error("unable to map Rust identifier or type")]
     ItemMap,
+    #[error("{0} environment variable not set")]
+    EnvVarNotFound(String),
 }
 
 impl TestGenerator {
@@ -241,6 +246,35 @@ impl TestGenerator {
         self.skips.push(Box::new(move |item| {
             if let MapInput::Field(struct_, field) = item {
                 f(struct_, field)
+            } else {
+                false
+            }
+        }));
+        self
+    }
+
+    /// Configures whether tests for the type of a field is skipped or not.
+    ///
+    /// The closure is given a Rust struct as well as a field within that
+    /// struct. A flag indicating whether the field's type should be tested is
+    /// returned.
+    ///
+    /// By default all field properties are tested.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.skip_field_type(|s, field| {
+    ///     s == "foo_t" || (s == "bar_t" && field == "bar")
+    /// });
+    /// ```
+    pub fn skip_field_type(&mut self, f: impl Fn(&Struct, &Field) -> bool + 'static) -> &mut Self {
+        self.skips.push(Box::new(move |item| {
+            if let MapInput::FieldType(s, field) = item {
+                f(s, field)
             } else {
                 false
             }
@@ -467,6 +501,30 @@ impl TestGenerator {
         self
     }
 
+    /// Configures whether the ABI roundtrip tests for a type are emitted.
+    ///
+    /// The closure is passed the name of a Rust type and returns whether the
+    /// tests are generated.
+    ///
+    /// By default all types undergo ABI roundtrip tests. Arrays cannot undergo
+    /// an ABI roundtrip because they cannot be returned by C functions, and
+    /// have to be manually skipped here.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.skip_roundtrip(|s| {
+    ///     s.starts_with("foo_")
+    /// });
+    /// ```
+    pub fn skip_roundtrip(&mut self, f: impl Fn(&str) -> bool + 'static) -> &mut Self {
+        self.skip_roundtrip = Some(Box::new(f));
+        self
+    }
+
     /// Generate the Rust and C testing files.
     ///
     /// Returns the path to the generated file.
@@ -490,7 +548,8 @@ impl TestGenerator {
         let output_directory = self
             .out_dir
             .clone()
-            .unwrap_or_else(|| env::var("OUT_DIR").unwrap().into());
+            .or_else(|| env::var("OUT_DIR").ok().map(Into::into))
+            .ok_or(GenerationError::EnvVarNotFound("OUT_DIR".to_string()))?;
         let output_file_path = output_directory.join(output_file_path);
 
         // Generate the Rust side of the tests.
@@ -565,6 +624,7 @@ impl TestGenerator {
             MapInput::Type(ty, TyKind::Struct) => format!("struct {ty}"),
             MapInput::Type(ty, TyKind::Union) => format!("union {ty}"),
             MapInput::Type(ty, TyKind::Other) => ty.to_string(),
+            MapInput::FieldType(_, f) => f.ident().to_string(),
         })
     }
 }

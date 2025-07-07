@@ -66,12 +66,12 @@ pub enum TyKind {
 pub(crate) enum MapInput<'a> {
     Struct(&'a Struct),
     Fn(&'a crate::Fn),
-    #[expect(unused)]
     Field(&'a Struct, &'a Field),
     Alias(&'a Type),
     Const(&'a Const),
     Static(&'a Static),
     Type(&'a str, TyKind),
+    FieldType(&'a Struct, &'a Field),
 }
 
 // The From impls make it easier to write code in the test templates.

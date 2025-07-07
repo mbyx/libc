@@ -13,7 +13,6 @@ cc = "1.0"
 ctest-next = { path = "../ctest-next" }
 
 [dependencies]
-cfg-if = "1.0.0"
 libc = { path = ".." }
 
 [[bin]]
@@ -23,20 +22,3 @@ test = false
 [[bin]]
 name = "t2"
 test = false
-
-[[bin]]
-name = "t1_cxx"
-test = false
-
-[[bin]]
-name = "t2_cxx"
-test = false
-
-# FIXME(msrv): These should be moved to the root Cargo.toml as `[workspace.lints.*]`
-#              once MSRV is above 1.64 and replaced with `[lints] workspace=true`
-
-[lints.rust]
-# FIXME(cleanup): make ident usage consistent in each file
-unused_qualifications = "allow"
-
-[lints.clippy]

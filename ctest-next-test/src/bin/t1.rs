@@ -1,7 +1,7 @@
 #![cfg(not(test))]
-// #![deny(warnings)]
+#![deny(warnings)]
+#![allow(unused_variables, unused_mut)]
 
 use ctest_next_test::t1::*;
-use libc::*;
 
 include!(concat!(env!("OUT_DIR"), "/t1gen.rs"));

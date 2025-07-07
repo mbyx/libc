@@ -6,7 +6,6 @@
 mod generated_tests {
     #![allow(non_snake_case)]
     #![deny(improper_ctypes_definitions)]
-    use std::ffi::CStr;
     use std::fmt::{Debug, LowerHex};
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::{mem, ptr, slice};
@@ -43,7 +42,7 @@ mod generated_tests {
 
     #[allow(non_snake_case)]
     #[inline(never)]
-    fn size_align_string() {
+    pub fn size_align_string() {
         extern "C" {
             #[allow(non_snake_case)]
             fn __test_size_string() -> u64;
@@ -55,6 +54,80 @@ mod generated_tests {
                 __test_size_string(), "string size");
             check_same(mem::align_of::<string>() as u64,
                 __test_align_string(), "string align");
+        }
+    }
+
+    #[allow(non_snake_case, unused_mut, unused_variables, deprecated)]
+    #[inline(never)]
+    fn roundtrip_padding_char*() -> Vec<u8> {
+        // stores (offset, size) for each field
+        let mut v = Vec::<(usize, usize)>::new();
+        let foo = std::mem::MaybeUninit::<char*>::uninit();
+        let foo = foo.as_ptr();
+        // This vector contains `1` if the byte is padding
+        // and `0` if the byte is not padding.
+        let mut pad = Vec::<u8>::new();
+        // Initialize all bytes as:
+        //  - padding if we have fields, this means that only
+        //  the fields will be checked
+        //  - no-padding if we have a type alias: if this
+        //  causes problems the type alias should be skipped
+        pad.resize(mem::size_of::<char*>(), 0);
+        for (off, size) in &v {
+            for i in 0..*size {
+                pad[off + i] = 0;
+            }
+        }
+        pad
+    }
+
+    #[allow(non_snake_case, deprecated)]
+    #[inline(never)]
+    fn roundtrip_char*() {
+        use std::ffi::c_int;
+        type U = char*;
+        #[allow(improper_ctypes)]
+        extern "C" {
+            #[allow(non_snake_case)]
+            fn __test_roundtrip_char*(
+                size: i32, x: U, e: *mut c_int, pad: *const u8
+            ) -> U;
+        }
+        let pad = roundtrip_padding_char*();
+        unsafe {
+            use std::mem::{MaybeUninit, size_of};
+            let mut error: c_int = 0;
+            let mut y = MaybeUninit::<U>::uninit();
+            let mut x = MaybeUninit::<U>::uninit();
+            let x_ptr = x.as_mut_ptr().cast::<u8>();
+            let y_ptr = y.as_mut_ptr().cast::<u8>();
+            let sz = size_of::<U>();
+            for i in 0..sz {
+                let c: u8 = (i % 256) as u8;
+                let c = if c == 0 { 42 } else { c };
+                let d: u8 = 255_u8 - (i % 256) as u8;
+                let d = if d == 0 { 42 } else { d };
+                x_ptr.add(i).write_volatile(c);
+                y_ptr.add(i).write_volatile(d);
+            }
+            let r: U = __test_roundtrip_char*(sz as i32, x.assume_init(), &mut error, pad.as_ptr());
+            if error == 1 {
+                FAILED.store(true, Ordering::Relaxed);
+                return;
+            }
+            for i in 0..size_of::<U>() {
+                if pad[i] == 1 { continue; }
+                // eprintln!("Rust testing byte {i} of {} of char*", size_of::<U>());
+                let rust = (*y_ptr.add(i)) as usize;
+                let c = (&r as *const _ as *const u8)
+                            .add(i).read_volatile() as usize;
+                if rust != c {
+                    eprintln!(
+                        "rust [{i}] = {rust} != {c} (C): C \"char*\" -> Rust",
+                    );
+                    FAILED.store(true, Ordering::Relaxed);
+                }
+            }
         }
     }
 }
@@ -76,4 +149,5 @@ fn main() {
 
 // Run all tests by calling the functions that define them.
 fn run_all() {
+    size_align_string();
 }

@@ -22,17 +22,61 @@ char const** __test_const_B(void) {
     return &__test_const_B_val;
 }
 
- uint64_t __test_size_Byte(void) { return sizeof(uint8_t); }
- uint64_t __test_align_Byte(void) {
+uint64_t __test_size_Byte(void) { return sizeof(Byte); }
+uint64_t __test_align_Byte(void) {
     typedef struct {
         unsigned char c;
-        uint8_t v;
+        Byte v;
     } type;
     type t;
     size_t t_addr = (size_t)(unsigned char*)(&t);
     size_t v_addr = (size_t)(unsigned char*)(&t.v);
     return t_addr >= v_addr? t_addr - v_addr : v_addr - t_addr;
 }
- uint32_t __test_signed_Byte(void) {
-    return (((uint8_t) -1) < 0);
+uint32_t __test_signed_Byte(void) {
+    return (((Byte) -1) < 0);
 }
+
+#ifdef _MSC_VER
+// Disable signed/unsigned conversion warnings on MSVC.
+// These trigger even if the conversion is explicit.
+#  pragma warning(disable:4365)
+#endif
+Byte __test_roundtrip_u8(
+        int32_t rust_size, Byte value, int* error, unsigned char* pad
+) {
+    volatile unsigned char* p = (volatile unsigned char*)&value;
+    int size = (int)sizeof(Byte);
+    if (size != rust_size) {
+        fprintf(
+            stderr,
+            "size of Byte is %d in C and %d in Rust\n",
+            (int)size, (int)rust_size
+        );
+        *error = 1;
+        return value;
+    }
+    int i = 0;
+    for (i = 0; i < size; ++i) {
+            if (pad[i]) { continue; }
+            // fprintf(stdout, "C testing byte %d of %d of \"u8\"\n", i, size);
+            unsigned char c = (unsigned char)(i % 256);
+            c = c == 0? 42 : c;
+            if (p[i] != c) {
+                *error = 1;
+                fprintf(
+                    stderr,
+                    "rust[%d] = %d != %d (C): Rust \"u8\" -> C\n",
+                    i, (int)p[i], (int)c
+                );
+            }
+            unsigned char d
+                = (unsigned char)(255) - (unsigned char)(i % 256);
+            d = d == 0? 42: d;
+            p[i] = d;
+    }
+    return value;
+}
+#ifdef _MSC_VER
+#  pragma warning(default:4365)
+#endif

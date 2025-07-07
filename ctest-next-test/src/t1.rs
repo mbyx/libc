@@ -1,9 +1,10 @@
 #![allow(dead_code)]
+#![allow(non_camel_case_types)]
 
-use libc::*;
+use std::ffi::{c_char, c_double, c_int, c_long, c_uint, c_void};
 
 pub type T1Foo = i32;
-// pub const T1S: &str = "foo";
+pub const T1S: *const c_char = c"foo".as_ptr();
 
 pub const T1N: i32 = 5;
 
@@ -19,8 +20,8 @@ pub struct T1Bar {
     pub b: u32,
     pub c: T1Foo,
     pub d: u8,
-    pub e: [i64; T1N as usize],
-    pub f: [[i64; 2]; T1N as usize],
+    pub e: [i64; 5], // 5 should be T1N as usize
+    pub f: [[i64; 2]; 5],
 }
 
 #[repr(C)]
@@ -57,7 +58,7 @@ i! {
     pub const T1C: u32 = 4;
 }
 
-// const NOT_PRESENT: u32 = 5;
+const NOT_PRESENT: u32 = 5;
 
 pub type Arr = [i32; 4];
 
@@ -126,21 +127,6 @@ extern "C" {
     pub static mut T1_arr6: [[[i32; 3]; 2]; 1];
 
     pub static mut T1_sref: &'static i16;
-
-    pub static mut T1_mut_opt_ref: Option<&'static i32>;
-    pub static mut T1_mut_opt_mut_ref: Option<&'static mut i32>;
-    pub static T1_const_opt_const_ref: Option<&'static i32>;
-
-    pub static T1_opt_fn1: Option<unsafe extern "C" fn() -> ()>;
-    /* FIXME(#4365): duplicate symbol errors when enabled
-    pub static T1_opt_fn2: Option<unsafe extern "C" fn(u8) -> extern "C" fn(u16) -> u32>;
-    pub static T1_opt_fn3: Option<
-        unsafe extern "C" fn(
-            extern "C" fn(u8) -> u8,
-            extern "C" fn(u16) -> u16,
-        ) -> extern "C" fn(u16) -> u32,
-    >;
-    */
 }
 
 #[repr(C)]
@@ -182,9 +168,6 @@ extern "C" {
     pub fn T1_vol0(arg0: *mut c_void, arg1: *mut c_void) -> *mut c_void;
     pub fn T1_vol1(arg0: *mut c_void, arg1: *mut c_void) -> *mut c_void;
     pub fn T1_vol2(arg0: *mut c_void, arg1: *mut c_void) -> *mut c_void;
-    /* FIXME(#4365): duplicate symbol errors when enabled
-    pub static T1_fn_ptr_vol: Option<unsafe extern "C" fn(u8, u8) -> u8>;
-    */
 }
 
 pub const LOG_MAX_LINE_LENGTH: usize = 1400;
@@ -205,13 +188,13 @@ struct log_record_t {
     message: [c_char; LOG_MAX_LINE_LENGTH],
 }
 
-#[cfg(not(any(target_pointer_width = "16", target_pointer_width = "32")))]
-#[repr(C, align(16))]
-struct LongDoubleWrap {
-    inner: u128,
-}
-#[cfg(any(target_pointer_width = "16", target_pointer_width = "32"))]
-#[repr(C)]
-struct LongDoubleWrap {
-    inner: c_double,
-}
+// #[cfg(not(any(target_pointer_width = "16", target_pointer_width = "32")))]
+// #[repr(C, align(16))]
+// struct LongDoubleWrap {
+//     inner: u128,
+// }
+// #[cfg(any(target_pointer_width = "16", target_pointer_width = "32"))]
+// #[repr(C)]
+// struct LongDoubleWrap {
+//     inner: c_double,
+// }
