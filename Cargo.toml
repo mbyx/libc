@@ -145,6 +145,7 @@ members = [
     "ctest-next-test",
     "ctest-test",
     "libc-test",
+    "libc-test-next"
 ]
 
 # FIXME(msrv): These should be renamed as `[workspace.lints.*]` once MSRV is above 1.64

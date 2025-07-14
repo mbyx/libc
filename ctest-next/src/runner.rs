@@ -69,6 +69,14 @@ pub fn generate_test(
         cfg.include(p);
     }
 
+    for flag in &generator.flags {
+        cfg.flag(flag);
+    }
+
+    for (a, b) in &generator.defines {
+        cfg.define(a, b.as_ref().map(|s| &s[..]));
+    }
+
     let stem: &str = output_file_path.file_stem().unwrap().to_str().unwrap();
     cfg.target(&target)
         .out_dir(output_file_path.parent().unwrap())

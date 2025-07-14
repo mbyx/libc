@@ -5,7 +5,7 @@ use either::Either;
 use quote::ToTokens;
 
 use crate::ffi_items::FfiItems;
-use crate::translator::{translate_expr, Translator};
+use crate::translator::{translate_abi, translate_expr, Translator};
 use crate::{
     Field, MapInput, Result, Struct, TestGenerator, TranslationError, Union, VolatileItemKind,
 };
@@ -58,15 +58,33 @@ impl<'a> CTestTemplate<'a> {
     pub(crate) fn c_type(&self, item: impl Into<MapInput<'a>>) -> Result<String, TranslationError> {
         let item: MapInput<'a> = item.into();
 
-        let (ident, ty) = match item {
+        let (_ident, ty) = match item {
             MapInput::Const(c) => (c.ident(), self.translator.translate_type(&c.ty)?),
             MapInput::Field(_, f) => (f.ident(), self.translator.translate_type(&f.ty)?),
             MapInput::Static(s) => (s.ident(), self.translator.translate_type(&s.ty)?),
             MapInput::Fn(_) => unimplemented!(),
             // For structs/unions/aliases, their type is the same as their identifier.
-            MapInput::Alias(a) => (a.ident(), a.ident().to_string()),
-            MapInput::Struct(s) => (s.ident(), s.ident().to_string()),
-            MapInput::Union(u) => (u.ident(), u.ident().to_string()),
+            MapInput::Alias(a) => (
+                a.ident(),
+                self.translator.translate_primitive_type(&syn::Ident::new(
+                    a.ident(),
+                    proc_macro2::Span::call_site(),
+                )),
+            ),
+            MapInput::Struct(s) => (
+                s.ident(),
+                self.translator.translate_primitive_type(&syn::Ident::new(
+                    s.ident(),
+                    proc_macro2::Span::call_site(),
+                )),
+            ),
+            MapInput::Union(u) => (
+                u.ident(),
+                self.translator.translate_primitive_type(&syn::Ident::new(
+                    u.ident(),
+                    proc_macro2::Span::call_site(),
+                )),
+            ),
 
             MapInput::StructType(_) => panic!("MapInput::StructType is not allowed!"),
             MapInput::UnionType(_) => panic!("MapInput::UnionType is not allowed!"),
@@ -74,9 +92,9 @@ impl<'a> CTestTemplate<'a> {
             MapInput::Type(_) => panic!("MapInput::Type is not allowed!"),
         };
 
-        let item = if self.ffi_items.contains_struct(ident) {
+        let item = if self.ffi_items.contains_struct(&ty) {
             MapInput::StructType(&ty)
-        } else if self.ffi_items.contains_union(ident) {
+        } else if self.ffi_items.contains_union(&ty) {
             MapInput::UnionType(&ty)
         } else {
             MapInput::Type(&ty)
@@ -95,15 +113,37 @@ impl<'a> CTestTemplate<'a> {
         signature: &str,
     ) -> Result<String, TranslationError> {
         let new_signature = match ty {
+            syn::Type::Path(p) => {
+                // Check if this is an Option<fn_ptr> and recurse
+                if let Some(last_segment) = p.path.segments.last() {
+                    if last_segment.ident == "Option" {
+                        if let syn::PathArguments::AngleBracketed(args) = &last_segment.arguments {
+                            if let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first() {
+                                // Recurse with the inner type
+                                return self.c_signature(inner_ty, signature);
+                            }
+                        }
+                    }
+                }
+
+                // Regular path type handling
+                let mapped_type = self.get_mapped_type(ty)?;
+                format!("{mapped_type}* {signature}")
+            }
             syn::Type::BareFn(f) => {
                 let (ret, mut args, variadic) = self.translator.translate_signature_partial(f)?;
-                let abi = f
-                    .abi
-                    .clone()
-                    .unwrap()
-                    .name
-                    .map(|s| s.value())
-                    .unwrap_or("C".to_string());
+                let abi = if let Some(abi) = &f.abi {
+                    let target = self
+                        .generator
+                        .target
+                        .clone()
+                        .or_else(|| std::env::var("TARGET").ok())
+                        .or_else(|| std::env::var("TARGET_PLATFORM").ok())
+                        .unwrap();
+                    translate_abi(abi, &target)
+                } else {
+                    ""
+                };
 
                 if variadic {
                     args.push("...".to_string());
@@ -113,42 +153,57 @@ impl<'a> CTestTemplate<'a> {
 
                 format!("{}({}**{})({})", ret, abi, signature, args.join(", "))
             }
-            // Handles up to 2D arrays.
             syn::Type::Array(outer) => match outer.elem.deref() {
-                syn::Type::Array(inner) => format!(
-                    "{}(*{})[{}][{}]",
-                    self.translator.translate_type(inner.elem.deref())?,
-                    signature,
-                    translate_expr(&outer.len),
-                    translate_expr(&inner.len)
-                ),
-                _ => format!(
-                    "{}(*{})[{}]",
-                    self.translator.translate_type(outer.elem.deref())?,
-                    signature,
-                    translate_expr(&outer.len)
-                ),
+                syn::Type::Array(inner) => {
+                    let inner_type = self.get_mapped_type(inner.elem.deref())?;
+                    format!(
+                        "{}(*{})[{}][{}]",
+                        inner_type,
+                        signature,
+                        translate_expr(&outer.len),
+                        translate_expr(&inner.len)
+                    )
+                }
+                _ => {
+                    let elem_type = self.get_mapped_type(outer.elem.deref())?;
+                    format!(
+                        "{}(*{})[{}]",
+                        elem_type,
+                        signature,
+                        translate_expr(&outer.len)
+                    )
+                }
             },
             _ => {
-                let unmapped_c_type = self.translator.translate_type(ty)?;
-                let map_input = if self
-                    .ffi_items
-                    .contains_struct(&ty.to_token_stream().to_string())
-                {
-                    MapInput::StructType(&unmapped_c_type)
-                } else if self
-                    .ffi_items
-                    .contains_union(&ty.to_token_stream().to_string())
-                {
-                    MapInput::UnionType(&unmapped_c_type)
-                } else {
-                    MapInput::Type(&unmapped_c_type)
-                };
-                format!("{}* {}", self.generator.map(map_input), signature)
+                let mapped_type = self.get_mapped_type(ty)?;
+                format!("{mapped_type}* {signature}")
             }
         };
 
         Ok(new_signature)
+    }
+
+    /// Recursively get the properly mapped type for any syn::Type
+    fn get_mapped_type(&self, ty: &syn::Type) -> Result<String, TranslationError> {
+        let type_name = match ty {
+            syn::Type::Path(p) => p.path.segments.last().unwrap().ident.to_string(),
+            syn::Type::Ptr(p) => match p.elem.deref() {
+                syn::Type::Path(p) => p.path.segments.last().unwrap().ident.to_string(),
+                _ => p.to_token_stream().to_string(),
+            },
+            _ => ty.to_token_stream().to_string(),
+        };
+
+        let unmapped_c_type = self.translator.translate_type(ty)?;
+        let map_input = if self.ffi_items.contains_struct(&type_name) {
+            MapInput::StructType(&unmapped_c_type)
+        } else if self.ffi_items.contains_union(&type_name) {
+            MapInput::UnionType(&unmapped_c_type)
+        } else {
+            MapInput::Type(&unmapped_c_type)
+        };
+
+        Ok(self.generator.map(map_input))
     }
 
     /// Returns the volatile keyword if the given item is volatile.
@@ -179,7 +234,7 @@ pub(crate) fn should_skip_field(
     e: Either<&Struct, &Union>,
     field: &Field,
 ) -> bool {
-    gen.skips.iter().any(|f| f(&MapInput::Field(e, field)))
+    gen.skips.iter().any(|f| f(&MapInput::Field(e, field))) || !field.public
 }
 
 /// Determine whether a struct field type should be skipped for tests.
@@ -188,5 +243,5 @@ pub(crate) fn should_skip_field_type(
     e: Either<&Struct, &Union>,
     field: &Field,
 ) -> bool {
-    gen.skips.iter().any(|f| f(&MapInput::FieldType(e, field)))
+    gen.skips.iter().any(|f| f(&MapInput::FieldType(e, field))) || !field.public
 }

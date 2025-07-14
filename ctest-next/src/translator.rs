@@ -125,6 +125,19 @@ impl Translator {
                 let last_segment = path.path.segments.last().unwrap();
                 let ident = last_segment.ident.to_string();
 
+                // FIXME: Validate if this is FFI safe.
+                if last_segment.ident == "Option" {
+                    match &last_segment.arguments {
+                        syn::PathArguments::AngleBracketed(p) => {
+                            if let Some(syn::GenericArgument::Type(ty)) = p.args.first() {
+                                let base_type = self.translate_type(ty)?;
+                                return Ok(format!("{modifier} {base_type}*").trim().to_string());
+                            }
+                        }
+                        _ => panic!("Not possible."),
+                    }
+                }
+
                 match ident.as_str() {
                     "str" => {
                         // &str is not ABI safe and should not be supported.
@@ -257,6 +270,17 @@ impl Translator {
     /// Translate a Rust path into its C equivalent.
     fn translate_path(&self, path: &syn::TypePath) -> Result<String, TranslationError> {
         let last = path.path.segments.last().unwrap();
+        // FIXME: Validate if this is FFI safe.
+        if last.ident == "Option" {
+            match &last.arguments {
+                syn::PathArguments::AngleBracketed(p) => {
+                    if let Some(syn::GenericArgument::Type(ty)) = p.args.first() {
+                        return self.translate_type(ty);
+                    }
+                }
+                _ => panic!("Not possible."),
+            }
+        }
         Ok(self.translate_primitive_type(&last.ident))
     }
 
@@ -359,6 +383,16 @@ impl Translator {
 /// This function will just pass the expression as is in most cases.
 pub(crate) fn translate_expr(expr: &syn::Expr) -> String {
     match expr {
+        // This is done to deal with things like 3usize.
+        syn::Expr::Index(i) => {
+            let base = translate_expr(&i.expr);
+            let index = translate_expr(&i.index);
+            format!("{base}[{index}]")
+        }
+        syn::Expr::Lit(l) => match &l.lit {
+            syn::Lit::Int(i) => i.base10_digits().to_string(),
+            _ => l.to_token_stream().to_string(),
+        },
         syn::Expr::Path(p) => p.path.segments.last().unwrap().ident.to_string(),
         syn::Expr::Cast(c) => translate_expr(c.expr.deref()),
         expr => expr.to_token_stream().to_string(),
@@ -372,4 +406,16 @@ fn is_rust_primitive(ty: &str) -> bool {
         "f32", "f64",
     ];
     ty.starts_with("c_") || rustc_types.contains(&ty)
+}
+
+/// Translate ABI of a rust extern function to its C equivalent.
+pub(crate) fn translate_abi(abi: &syn::Abi, target: &str) -> &'static str {
+    let abi_name = abi.name.as_ref().map(|lit| lit.value());
+
+    match abi_name.as_deref() {
+        Some("stdcall") => "__stdcall ",
+        Some("system") if target.contains("i686-pc-windows") => "__stdcall ",
+        Some("C") | Some("system") | None => "",
+        Some(a) => panic!("unknown ABI: {a}"),
+    }
 }

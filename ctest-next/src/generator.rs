@@ -35,12 +35,14 @@ pub struct TestGenerator {
     pub(crate) target: Option<String>,
     pub(crate) includes: Vec<PathBuf>,
     out_dir: Option<PathBuf>,
-    flags: Vec<String>,
-    defines: Vec<(String, Option<String>)>,
+    pub(crate) flags: Vec<String>,
+    pub(crate) defines: Vec<(String, Option<String>)>,
+    pub(crate) cfg: Vec<(String, Option<String>)>,
     mapped_names: Vec<MappedName>,
     pub(crate) volatile_items: Vec<VolatileItem>,
     pub(crate) skips: Vec<Skip>,
     verbose_skip: bool,
+    pub(crate) ffi_items: Option<FfiItems>,
     pub(crate) skip_private: bool,
     pub(crate) array_arg: Option<ArrayArg>,
     pub(crate) skip_roundtrip: Option<SkipRoundTrip>,
@@ -64,6 +66,33 @@ impl TestGenerator {
     /// Creates a new blank test generator.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Clear all configuration except for the pre parsed ast.
+    ///
+    /// This method is intended to be used when the same crate has to be tested
+    /// multiple times with different configurations.
+    ///
+    /// It will cause incorrect code generation if the same crate isn't passed to `generate_test`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new()
+    /// cfg.header("foo.h")
+    /// // Other configuration.
+    /// // Generate tests.
+    /// let mut cfg = cfg.clear_config();
+    /// // Use to generate different tests for the same crate.
+    ///
+    /// ```
+    pub fn clear_config(self) -> Self {
+        Self {
+            ffi_items: self.ffi_items,
+            ..Default::default()
+        }
     }
 
     /// Add a header to be included as part of the generated C file.
@@ -101,6 +130,34 @@ impl TestGenerator {
     /// ```
     pub fn target(&mut self, target: &str) -> &mut Self {
         self.target = Some(target.to_string());
+        self
+    }
+
+    /// Set a `--cfg` option with which to expand the Rust FFI crate.
+    ///
+    /// By default the Rust code is run through expansion to determine what C
+    /// APIs are exposed (to allow differences across platforms).
+    ///
+    /// The `k` argument is the `#[cfg]` value to define, while `v` is the
+    /// optional value of `v`:
+    ///
+    /// * `k == "foo"` and `v == None` makes `#[cfg(foo)]` expand. That is,
+    ///   `cfg!(foo)` expands to `true`.
+    ///
+    /// * `k == "bar"` and `v == Some("baz")` makes `#[cfg(bar = "baz")]`
+    ///   expand. That is, `cfg!(bar = "baz")` expands to `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.cfg("foo", None) // cfg!(foo)
+    ///    .cfg("bar", Some("baz")); // cfg!(bar = "baz")
+    /// ```
+    pub fn cfg(&mut self, k: &str, v: Option<&str>) -> &mut Self {
+        self.cfg.push((k.to_string(), v.map(|s| s.to_string())));
         self
     }
 
@@ -307,6 +364,29 @@ impl TestGenerator {
         self.skips.push(Box::new(move |item| {
             if let MapInput::Struct(struct_) = item {
                 f(struct_)
+            } else {
+                false
+            }
+        }));
+        self
+    }
+
+    /// Configures whether the tests for a union are emitted.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.skip_union(|u| {
+    ///     u.ident().starts_with("foo_")
+    /// });
+    /// ```
+    pub fn skip_union(&mut self, f: impl Fn(&Union) -> bool + 'static) -> &mut Self {
+        self.skips.push(Box::new(move |item| {
+            if let MapInput::Union(union_) = item {
+                f(union_)
             } else {
                 false
             }
@@ -749,14 +829,21 @@ impl TestGenerator {
         crate_path: impl AsRef<Path>,
         output_file_path: impl AsRef<Path>,
     ) -> Result<PathBuf, GenerationError> {
-        let expanded = expand(&crate_path).map_err(|e| {
-            GenerationError::MacroExpansion(crate_path.as_ref().to_path_buf(), e.to_string())
-        })?;
-        let ast = syn::parse_file(&expanded)
-            .map_err(|e| GenerationError::RustSyntax(expanded, e.to_string()))?;
+        // Save the initial parsed ast to prevent unneeded reparsing.
+        let mut ffi_items = if self.ffi_items.is_none() {
+            let expanded = expand(&crate_path, self).map_err(|e| {
+                GenerationError::MacroExpansion(crate_path.as_ref().to_path_buf(), e.to_string())
+            })?;
+            let ast = syn::parse_file(&expanded)
+                .map_err(|e| GenerationError::RustSyntax(expanded, e.to_string()))?;
 
-        let mut ffi_items = FfiItems::new();
-        ffi_items.visit_file(&ast);
+            let mut ffi_items = FfiItems::new();
+            ffi_items.visit_file(&ast);
+            self.ffi_items = Some(ffi_items.clone());
+            ffi_items
+        } else {
+            self.ffi_items.clone().unwrap()
+        };
 
         // Does not filter out tests for fields, that is done in the template.
         self.filter_ffi_items(&mut ffi_items);
@@ -800,7 +887,7 @@ impl TestGenerator {
     ///
     /// Does not skip specific tests or specific fields. If `skip_private` is true,
     /// it will skip tests for all private items.
-    fn filter_ffi_items(&self, ffi_items: &mut FfiItems) {
+    fn filter_ffi_items(&mut self, ffi_items: &mut FfiItems) {
         let verbose = self.verbose_skip;
 
         macro_rules! filter {
@@ -823,6 +910,7 @@ impl TestGenerator {
         filter!(aliases, Alias, "alias");
         filter!(constants, Const, "const");
         filter!(structs, Struct, "struct");
+        filter!(unions, Union, "union");
         filter!(foreign_functions, Fn, "fn");
         filter!(foreign_statics, Static, "static");
     }

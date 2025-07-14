@@ -252,7 +252,7 @@ macro_rules! c_enum {
 
     // Use a specific type if provided, otherwise default to `c_uint`
     (@ty $repr:ty) => { $repr };
-    (@ty) => { $crate::c_uint };
+    (@ty) => { crate::c_uint };
 }
 
 // This is a pretty horrible hack to allow us to conditionally mark some functions as 'const',
