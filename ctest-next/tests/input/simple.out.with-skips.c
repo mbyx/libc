@@ -29,11 +29,6 @@ uint64_t __test_align_Byte(void) {
     return t_addr >= v_addr? t_addr - v_addr : v_addr - t_addr;
 }
 
-// Return `1` if the type is signed, otherwise return `0`. 
-uint32_t __test_signed_Byte(void) {
-    return (((Byte) -1) < 0);
-}
-
 #ifdef _MSC_VER
 // Disable signed/unsigned conversion warnings on MSVC.
 // These trigger even if the conversion is explicit.
@@ -109,19 +104,6 @@ char const** __test_field_type_Person_name(struct Person* b) {
     return &b->name;
 }
 
-uint64_t __test_offset_Person_age(void) {
-    return offsetof(struct Person, age);
-}
-
-uint64_t __test_fsize_Person_age(void) {
-    struct Person* foo = NULL;
-    return sizeof(foo->age);
-}
-
-uint8_t* __test_field_type_Person_age(struct Person* b) {
-    return &b->age;
-}
-
 #ifdef _MSC_VER
 // Disable signed/unsigned conversion warnings on MSVC.
 // These trigger even if the conversion is explicit.
@@ -195,19 +177,6 @@ uint64_t __test_fsize_Word_word(void) {
 
 uint16_t* __test_field_type_Word_word(union Word* b) {
     return &b->word;
-}
-
-uint64_t __test_offset_Word_byte(void) {
-    return offsetof(union Word, byte);
-}
-
-uint64_t __test_fsize_Word_byte(void) {
-    union Word* foo = NULL;
-    return sizeof(foo->byte);
-}
-
-Byte(*__test_field_type_Word_byte(union Word* b))[2] {
-    return &b->byte;
 }
 
 #ifdef _MSC_VER

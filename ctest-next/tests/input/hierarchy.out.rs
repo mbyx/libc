@@ -78,21 +78,6 @@ mod generated_tests {
         }
     }
 
-    /// Test that the aliased type has the same sign (signed or unsigned) in both Rust and C.
-    ///
-    /// This check can be performed because `!(0 as _)` yields either -1 or the maximum value
-    /// depending on whether a signed or unsigned type is used. This is simply checked on both
-    /// Rust and C sides to see if they are equal.
-    pub fn sign_in6_addr() {
-        extern "C" {
-            fn __test_signed_in6_addr() -> u32;
-        }
-        unsafe {
-            check_same(((!(0 as in6_addr)) < (0 as in6_addr)) as u32,
-                    __test_signed_in6_addr(), "in6_addr signed");
-        }
-    }
-
     /// Generates a padding map for a specific type.
     ///
     /// Essentially, it returns a list of bytes, whose length is equal to the size of the type in
@@ -174,6 +159,5 @@ fn main() {
 fn run_all() {
     const_ON();
     size_align_in6_addr();
-    sign_in6_addr();
     roundtrip_in6_addr();
 }

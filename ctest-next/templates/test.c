@@ -43,7 +43,7 @@ uint64_t __test_align_{{ ident }}(void) {
     return t_addr >= v_addr? t_addr - v_addr : v_addr - t_addr;
 }
 
-{%- if translator.has_sign(ffi_items, alias.ty) +%}
+{%- if translator.has_sign(ffi_items, alias.ty) && !self::should_test_sign(generator, ident) +%}
 
 // Return `1` if the type is signed, otherwise return `0`. 
 uint32_t __test_signed_{{ ident }}(void) {

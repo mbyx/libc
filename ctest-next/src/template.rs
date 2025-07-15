@@ -228,6 +228,23 @@ pub(crate) fn should_roundtrip(gen: &TestGenerator, ident: &str) -> bool {
     gen.skip_roundtrip.as_ref().is_none_or(|skip| !skip(ident))
 }
 
+/// Determine whether a Rust alias should have a signededness test.
+///
+/// By default all aliases are tested if they alias to a signed/unsigned type.
+pub(crate) fn should_test_sign(gen: &TestGenerator, ident: &str) -> bool {
+    gen.skip_signededness
+        .as_ref()
+        .is_none_or(|skip| !skip(ident))
+}
+
+/// Determine whether a Rust ffi function should have a fn ptr check.
+#[expect(unused)]
+pub(crate) fn should_test_fn_ptr(gen: &TestGenerator, ident: &str) -> bool {
+    gen.skip_fn_ptr_check
+        .as_ref()
+        .is_none_or(|skip| !skip(ident))
+}
+
 /// Determine whether a struct field should be skipped for tests.
 pub(crate) fn should_skip_field(
     gen: &TestGenerator,

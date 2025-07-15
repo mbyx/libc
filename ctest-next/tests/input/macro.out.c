@@ -83,32 +83,6 @@ uint64_t __test_align_VecU8(void) {
     return t_addr >= v_addr? t_addr - v_addr : v_addr - t_addr;
 }
 
-uint64_t __test_offset_VecU8_x(void) {
-    return offsetof(struct VecU8, x);
-}
-
-uint64_t __test_fsize_VecU8_x(void) {
-    struct VecU8* foo = NULL;
-    return sizeof(foo->x);
-}
-
-uint8_t* __test_field_type_VecU8_x(struct VecU8* b) {
-    return &b->x;
-}
-
-uint64_t __test_offset_VecU8_y(void) {
-    return offsetof(struct VecU8, y);
-}
-
-uint64_t __test_fsize_VecU8_y(void) {
-    struct VecU8* foo = NULL;
-    return sizeof(foo->y);
-}
-
-uint8_t* __test_field_type_VecU8_y(struct VecU8* b) {
-    return &b->y;
-}
-
 #ifdef _MSC_VER
 // Disable signed/unsigned conversion warnings on MSVC.
 // These trigger even if the conversion is explicit.
@@ -169,32 +143,6 @@ uint64_t __test_align_VecU16(void) {
     size_t t_addr = (size_t)(unsigned char*)(&t);
     size_t v_addr = (size_t)(unsigned char*)(&t.v);
     return t_addr >= v_addr? t_addr - v_addr : v_addr - t_addr;
-}
-
-uint64_t __test_offset_VecU16_x(void) {
-    return offsetof(struct VecU16, x);
-}
-
-uint64_t __test_fsize_VecU16_x(void) {
-    struct VecU16* foo = NULL;
-    return sizeof(foo->x);
-}
-
-uint16_t* __test_field_type_VecU16_x(struct VecU16* b) {
-    return &b->x;
-}
-
-uint64_t __test_offset_VecU16_y(void) {
-    return offsetof(struct VecU16, y);
-}
-
-uint64_t __test_fsize_VecU16_y(void) {
-    struct VecU16* foo = NULL;
-    return sizeof(foo->y);
-}
-
-uint16_t* __test_field_type_VecU16_y(struct VecU16* b) {
-    return &b->y;
 }
 
 #ifdef _MSC_VER

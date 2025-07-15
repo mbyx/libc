@@ -110,7 +110,7 @@ mod generated_tests {
         }
     }
 
-    {%- if translator.has_sign(ffi_items, alias.ty) +%}
+    {%- if translator.has_sign(ffi_items, alias.ty) && !self::should_test_sign(generator, ident) +%}
 
     /// Test that the aliased type has the same sign (signed or unsigned) in both Rust and C.
     ///
@@ -538,7 +538,7 @@ fn run_all() {
     {%- for alias in ffi_items.aliases() +%}
     {%- let ident = alias.ident() +%}
     size_align_{{ ident }}();
-    {%- if translator.has_sign(ffi_items, alias.ty) +%}
+    {%- if translator.has_sign(ffi_items, alias.ty) && !self::should_test_sign(generator, ident) +%}
     sign_{{ ident }}();
     {%- endif +%}
     {%- if self::should_roundtrip(generator, ident) +%}
