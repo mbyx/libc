@@ -106,7 +106,7 @@ fn test_translation_type_bare_fn() {
 fn test_translation_type_array() {
     assert_eq!(
         ty("[&u8; 2 + 2]").unwrap(),
-        "const uint8_t*[2 + 2]".to_string()
+        "const uint8_t* [2 + 2]".to_string()
     );
 }
 

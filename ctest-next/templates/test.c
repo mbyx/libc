@@ -43,7 +43,7 @@ uint64_t __test_align_{{ ident }}(void) {
     return t_addr >= v_addr? t_addr - v_addr : v_addr - t_addr;
 }
 
-{%- if translator.has_sign(ffi_items, alias.ty) && !self::should_test_sign(generator, ident) +%}
+{%- if translator.has_sign(ffi_items, alias.ty) && self::should_test_sign(generator, ident) +%}
 
 // Return `1` if the type is signed, otherwise return `0`. 
 uint32_t __test_signed_{{ ident }}(void) {
@@ -294,3 +294,38 @@ uint64_t __test_fsize_{{ ident }}_{{ rust_field_name }}(void) {
 {%- endif +%}
 {%- endfor +%}
 
+{%- for static_ in ffi_items.foreign_statics() +%}
+{%- let ident = static_.ident() +%}
+{%- let ty = static_.ty.to_token_stream().to_string() +%}
+{%- let c_type = self.c_type(*static_).unwrap() +%}
+{%- let c_ident = self.c_ident(*static_) +%}
+{%- let mutable = (c_type.contains("const") || static_.mutable).then_some("").unwrap_or("const ") +%}
+{%- if ty.contains("extern fn") || ty.contains("extern \"C\" fn") +%}
+{%- let signature = c_type.replacen("(*)", &format!("(* __test_static_{}(void))", ident), 1) +%}
+{{ signature }} {
+    return {{ c_ident }};
+}
+{%- else if ty.starts_with("[") && ty.ends_with("]") +%}
+{%- let c_ptr_ty = c_type.split(' ').next().unwrap() +%}
+{%- let lens = c_type.split_whitespace().skip(1).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("") +%}
+{{ mutable }}{{ c_ptr_ty }} (*__test_static_{{ ident }}(void)){{ lens }} {
+    return &{{ c_ident }};
+}
+{%- else +%}
+{%- let volatile = self.emit_volatile(VolatileItemKind::Static(static_.clone())) +%}
+{{ mutable }}{{ volatile }}{{ c_type }}* __test_static_{{ ident }}(void) {
+    return &{{ c_ident }};
+}
+{%- endif +%}
+{%- endfor +%}
+
+{%- for func in ffi_items.foreign_functions() +%}
+{%- if self::should_test_fn_ptr(generator, func.ident()) +%}
+{%- let ident = func.ident() +%}
+{%- let c_ident = self.c_ident(*func) +%}
+{%- let signature = self.c_signature(&self::parse_signature_to_type(func.bare_fn_signature).unwrap(), &format!("__test_fn_{ident}(void)")).unwrap() +%}
+{{ signature }} {
+    return {{ c_ident }};
+}
+{%- endif +%}
+{%- endfor +%}

@@ -1,5 +1,6 @@
 use std::ops::Deref;
 
+use quote::ToTokens;
 use syn::punctuated::Punctuated;
 use syn::visit::Visit;
 
@@ -57,13 +58,11 @@ impl FfiItems {
     }
 
     /// Return a list of all foreign functions found mapped by their ABI.
-    #[cfg_attr(not(test), expect(unused))]
     pub(crate) fn foreign_functions(&self) -> &Vec<Fn> {
         &self.foreign_functions
     }
 
     /// Return a list of all foreign statics found mapped by their ABI.
-    #[cfg_attr(not(test), expect(unused))]
     pub(crate) fn foreign_statics(&self) -> &Vec<Static> {
         &self.foreign_statics
     }
@@ -137,6 +136,7 @@ fn visit_foreign_item_fn(table: &mut FfiItems, i: &syn::ForeignItemFn, abi: &Abi
             }
             _ => None,
         });
+    let bare_fn_signature = i.sig.to_token_stream().to_string().into_boxed_str();
 
     table.foreign_functions.push(Fn {
         public,
@@ -145,6 +145,7 @@ fn visit_foreign_item_fn(table: &mut FfiItems, i: &syn::ForeignItemFn, abi: &Abi
         link_name,
         parameters,
         return_type,
+        bare_fn_signature,
     });
 }
 
@@ -153,12 +154,34 @@ fn visit_foreign_item_static(table: &mut FfiItems, i: &syn::ForeignItemStatic, a
     let abi = abi.clone();
     let ident = i.ident.to_string().into_boxed_str();
     let ty = i.ty.deref().clone();
+    let mutable = match i.mutability {
+        syn::StaticMutability::Mut(_) => true,
+        _ => false,
+    };
+
+    let link_name = i
+        .attrs
+        .iter()
+        .find(|attr| attr.path().is_ident("link_name"))
+        .and_then(|attr| match &attr.meta {
+            syn::Meta::NameValue(nv) => {
+                if let syn::Expr::Lit(expr_lit) = &nv.value {
+                    if let syn::Lit::Str(lit_str) = &expr_lit.lit {
+                        return Some(lit_str.value().into_boxed_str());
+                    }
+                }
+                None
+            }
+            _ => None,
+        });
 
     table.foreign_statics.push(Static {
         public,
         abi,
         ident,
         ty,
+        mutable,
+        link_name,
     });
 }
 

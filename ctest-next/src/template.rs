@@ -238,7 +238,6 @@ pub(crate) fn should_test_sign(gen: &TestGenerator, ident: &str) -> bool {
 }
 
 /// Determine whether a Rust ffi function should have a fn ptr check.
-#[expect(unused)]
 pub(crate) fn should_test_fn_ptr(gen: &TestGenerator, ident: &str) -> bool {
     gen.skip_fn_ptr_check
         .as_ref()
@@ -261,4 +260,12 @@ pub(crate) fn should_skip_field_type(
     field: &Field,
 ) -> bool {
     gen.skips.iter().any(|f| f(&MapInput::FieldType(e, field))) || !field.public
+}
+
+fn parse_signature_to_type(signature: &str) -> syn::Result<syn::Type> {
+    let (_, s) = signature.split_once('(').unwrap();
+    let type_str = format!("type T = unsafe extern \"C\" fn({};", s);
+    eprintln!("type_str: {type_str}");
+    let item: syn::ItemType = syn::parse_str(&type_str)?;
+    Ok(*item.ty)
 }

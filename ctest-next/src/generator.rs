@@ -734,6 +734,27 @@ impl TestGenerator {
         self
     }
 
+    /// Configures the name of a static in the generated C code.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ctest_next::TestGenerator;
+    ///
+    /// let mut cfg = TestGenerator::new();
+    /// cfg.rename_static(|f| Some(format!("{}_c", f.ident())));
+    /// ```
+    pub fn rename_static(&mut self, f: impl Fn(&Static) -> Option<String> + 'static) -> &mut Self {
+        self.mapped_names.push(Box::new(move |item| {
+            if let MapInput::Static(s) = item {
+                f(s)
+            } else {
+                None
+            }
+        }));
+        self
+    }
+
     /// Configures how a Rust type is translated to a C type.
     ///
     /// # Examples

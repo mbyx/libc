@@ -287,7 +287,7 @@ impl Translator {
     /// Translate a Rust array declaration into its C equivalent.
     fn translate_array(&self, array: &syn::TypeArray) -> Result<String, TranslationError> {
         Ok(format!(
-            "{}[{}]",
+            "{} [{}]",
             self.translate_type(array.elem.deref())?,
             translate_expr(&array.len)
         ))

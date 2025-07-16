@@ -110,7 +110,7 @@ mod generated_tests {
         }
     }
 
-    {%- if translator.has_sign(ffi_items, alias.ty) && !self::should_test_sign(generator, ident) +%}
+    {%- if translator.has_sign(ffi_items, alias.ty) && self::should_test_sign(generator, ident) +%}
 
     /// Test that the aliased type has the same sign (signed or unsigned) in both Rust and C.
     ///
@@ -512,6 +512,65 @@ mod generated_tests {
     }
     {%- endif +%}
     {%- endfor +%}
+
+    {%- for static_ in ffi_items.foreign_statics() +%}
+    {%- let ident = static_.ident() +%}
+    {%- let ty = static_.ty.to_token_stream().to_string() +%}
+    {%- let mutable = static_.mutable.then_some("mut").unwrap_or("const") +%}
+    {%- if ty.contains("extern fn") || ty.contains("extern \"C\" fn") +%}
+    pub fn static_{{ ident }}() {
+        extern "C" {
+            fn __test_static_{{ ident }}() -> {{ ty }};
+        }
+        unsafe {
+            // We must use addr_of! here because of https://github.com/rust-lang/rust/issues/114447
+            check_same(*(std::ptr::addr_of!({{ ident }}) as *const {{ ty }}) as usize,
+                    __test_static_{{ ident }}() as usize,
+                    "{{ ident }} static");
+        }
+    }
+    {%- else if ty.starts_with("[") && ty.ends_with("]") +%}
+    pub fn static_{{ ident }}() {
+        extern "C" {
+            fn __test_static_{{ ident }}() -> *{{ mutable }} {{ ty }};
+        }
+        unsafe {
+            // We must use addr_of! here because of https://github.com/rust-lang/rust/issues/114447
+            check_same(std::ptr::addr_of!({{ ident }}) as usize,
+                    __test_static_{{ ident }}() as usize,
+                    "{{ ident }} static");
+        }
+    }
+    {%- else +%}
+    pub fn static_{{ ident }}() {
+        extern "C" {
+            fn __test_static_{{ ident }}() -> *{{ mutable }} {{ ty }};
+        }
+        unsafe {
+            // We must use addr_of! here because of https://github.com/rust-lang/rust/issues/114447
+            check_same(std::ptr::addr_of!({{ ident }}) as usize,
+                    __test_static_{{ ident }}() as usize,
+                    "{{ ident }} static");
+        }
+    }
+    {%- endif +%}
+    {%- endfor +%}
+
+    {%- for func in ffi_items.foreign_functions() +%}
+    {%- if self::should_test_fn_ptr(generator, func.ident()) +%}
+    {%- let ident = func.ident() +%}
+    pub fn fn_{{ ident }}() {
+        extern "C" {
+            fn __test_fn_{{ ident }}() -> *mut u32;
+        }
+        unsafe {
+            check_same({{ ident }} as usize,
+                    __test_fn_{{ ident }}() as usize,
+                    "{{ ident }} function pointer");
+        }
+    }
+    {%- endif +%}
+    {%- endfor +%}
 }
 
 use generated_tests::*;
@@ -538,7 +597,7 @@ fn run_all() {
     {%- for alias in ffi_items.aliases() +%}
     {%- let ident = alias.ident() +%}
     size_align_{{ ident }}();
-    {%- if translator.has_sign(ffi_items, alias.ty) && !self::should_test_sign(generator, ident) +%}
+    {%- if translator.has_sign(ffi_items, alias.ty) && self::should_test_sign(generator, ident) +%}
     sign_{{ ident }}();
     {%- endif +%}
     {%- if self::should_roundtrip(generator, ident) +%}
@@ -561,6 +620,18 @@ fn run_all() {
     field_offset_size_{{ ident }}();
     {%- if self::should_roundtrip(generator, union_.ident()) +%}
     roundtrip_{{ ident }}();
+    {%- endif +%}
+    {%- endfor +%}
+
+    {%- for static_ in ffi_items.foreign_statics() +%}
+    {%- let ident = static_.ident() +%}
+    static_{{ ident }}();
+    {%- endfor +%}
+
+    {%- for func in ffi_items.foreign_functions() +%}
+    {%- if self::should_test_fn_ptr(generator, func.ident()) +%}
+    {%- let ident = func.ident() +%}
+    fn_{{ ident }}();
     {%- endif +%}
     {%- endfor +%}
 }

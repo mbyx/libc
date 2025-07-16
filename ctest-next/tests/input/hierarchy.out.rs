@@ -78,6 +78,21 @@ mod generated_tests {
         }
     }
 
+    /// Test that the aliased type has the same sign (signed or unsigned) in both Rust and C.
+    ///
+    /// This check can be performed because `!(0 as _)` yields either -1 or the maximum value
+    /// depending on whether a signed or unsigned type is used. This is simply checked on both
+    /// Rust and C sides to see if they are equal.
+    pub fn sign_in6_addr() {
+        extern "C" {
+            fn __test_signed_in6_addr() -> u32;
+        }
+        unsafe {
+            check_same(((!(0 as in6_addr)) < (0 as in6_addr)) as u32,
+                    __test_signed_in6_addr(), "in6_addr signed");
+        }
+    }
+
     /// Generates a padding map for a specific type.
     ///
     /// Essentially, it returns a list of bytes, whose length is equal to the size of the type in
@@ -138,6 +153,27 @@ mod generated_tests {
             }
         }
     }
+    pub fn static_in6addr_any() {
+        extern "C" {
+            fn __test_static_in6addr_any() -> *const in6_addr;
+        }
+        unsafe {
+            // We must use addr_of! here because of https://github.com/rust-lang/rust/issues/114447
+            check_same(std::ptr::addr_of!(in6addr_any) as usize,
+                    __test_static_in6addr_any() as usize,
+                    "in6addr_any static");
+        }
+    }
+    pub fn fn_malloc() {
+        extern "C" {
+            fn __test_fn_malloc() -> *mut u32;
+        }
+        unsafe {
+            check_same(malloc as usize,
+                    __test_fn_malloc() as usize,
+                    "malloc function pointer");
+        }
+    }
 }
 
 use generated_tests::*;
@@ -159,5 +195,8 @@ fn main() {
 fn run_all() {
     const_ON();
     size_align_in6_addr();
+    sign_in6_addr();
     roundtrip_in6_addr();
+    static_in6addr_any();
+    fn_malloc();
 }

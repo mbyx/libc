@@ -14,6 +14,7 @@ pub struct Fn {
     pub(crate) parameters: Vec<Parameter>,
     #[expect(unused)]
     pub(crate) return_type: Option<syn::Type>,
+    pub(crate) bare_fn_signature: BoxStr,
 }
 
 impl Fn {

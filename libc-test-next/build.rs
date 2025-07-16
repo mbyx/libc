@@ -10,7 +10,6 @@ fn src_hotfix_dir() -> PathBuf {
     Path::new(&env::var_os("OUT_DIR").unwrap()).join("src-hotfix")
 }
 
-#[expect(unused)]
 fn do_cc() {
     let target = env::var("TARGET").unwrap();
     if cfg!(unix) || target.contains("cygwin") {
@@ -169,7 +168,7 @@ fn main() {
     let re = regex::bytes::Regex::new(r"(?-u:\b)crate::").unwrap();
     copy_dir_hotfix(Path::new("../src"), &hotfix_dir, &re, b"::");
 
-    // do_cc();
+    do_cc();
     do_ctest();
     do_semver();
 }
@@ -3503,7 +3502,7 @@ fn test_neutrino(target: &str) {
         )
     });
 
-    cfg.skip_static(move |name| (name == "__dso_handle"));
+    cfg.skip_static(move |name| name == "__dso_handle");
 
     cfg.generate(src_hotfix_dir().join("lib.rs"), "main.rs");
 }
@@ -4854,7 +4853,7 @@ fn test_linux(target: &str) {
         (union_ == "ptp_clock_caps" && (loongarch64 || sparc64) && (["adjust_phase", "max_phase_adj", "rsv"].contains(&field)))
     });
 
-    cfg.volatile_field(|s, f| (s.ident() == "aiocb" && f.ident() == "aio_buf"));
+    cfg.volatile_field(|s, f| s.ident() == "aiocb" && f.ident() == "aio_buf");
 
     cfg.skip_struct_field(move |struct_, field| {
         let struct_ = struct_.ident();

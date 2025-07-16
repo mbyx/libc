@@ -37,6 +37,11 @@ uint64_t __test_align_Byte(void) {
     return t_addr >= v_addr? t_addr - v_addr : v_addr - t_addr;
 }
 
+// Return `1` if the type is signed, otherwise return `0`. 
+uint32_t __test_signed_Byte(void) {
+    return (((Byte) -1) < 0);
+}
+
 #ifdef _MSC_VER
 // Disable signed/unsigned conversion warnings on MSVC.
 // These trigger even if the conversion is explicit.
